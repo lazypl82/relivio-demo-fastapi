@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import traceback
+import uuid
 from dataclasses import dataclass
 
 import httpx
@@ -41,7 +42,7 @@ def build_idempotency_key(request_id: str, api_path: str, error_type: str) -> st
 async def ingest_unhandled_error(request: Request, exc: Exception) -> None:
     config = load_relivio_config()
     api_path = resolve_api_path(request)
-    request_id = request.headers.get("x-request-id") or "req-unknown"
+    request_id = request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex}"
     error_type = exc.__class__.__name__
     stacktrace = "\n".join(traceback.format_exception(exc))[:4000]
 

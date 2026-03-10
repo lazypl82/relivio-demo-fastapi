@@ -61,7 +61,7 @@ summary_note=In the hosted environment, the summary is usually ready after the o
 
 ## 4. Trigger failures
 
-One request is enough. Repeated requests make the signal easier to observe.
+One request is enough. For a stronger demo, use the mixed risk scenario so Relivio sees multiple failing fingerprints instead of one repeated error.
 
 ```bash
 curl http://127.0.0.1:8000/demo/fail
@@ -71,11 +71,12 @@ Or:
 
 ```bash
 source .venv/bin/activate
-python scripts/trigger_failure.py --count 5
+python scripts/trigger_failure.py --scenario risk --count 8
 ```
 
 These requests pass through one shared FastAPI error middleware, which sends `POST /api/v1/ingest/log` to Relivio.
 The important part is that `api_path` is sent using the matched route template.
+The helper script also sends a unique `x-request-id` per request so repeated demo failures are not collapsed by the idempotency key.
 
 ## 5. Read the verdict
 
@@ -111,3 +112,4 @@ For a first rollout, those two files are enough.
 - `GET /demo/ok`
 - `GET /demo/fail`
 - `GET /demo/fail-timeout`
+- `GET /demo/fail-validation`

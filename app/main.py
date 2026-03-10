@@ -31,6 +31,11 @@ async def demo_fail_timeout() -> dict[str, str]:
     raise TimeoutError("checkout timeout while waiting for downstream inventory")
 
 
+@app.get("/demo/fail-validation")
+async def demo_fail_validation() -> dict[str, str]:
+    raise ValueError("checkout payload validation failed: currency code missing")
+
+
 @app.middleware("http")
 async def relivio_error_middleware(request: Request, call_next):
     try:
