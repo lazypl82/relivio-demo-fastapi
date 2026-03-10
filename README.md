@@ -54,8 +54,9 @@ python scripts/register_deploy.py
 Example output:
 
 ```text
-deployment_id=dep_xxxxx
+deployment_id=0195f8d8-6f3c-7d4c-bd79-8a0ab2d2a911
 version=example-20260310121500
+summary_note=In the hosted environment, the summary is usually ready after the observation window closes.
 ```
 
 ## 4. Trigger failures
@@ -80,10 +81,11 @@ The important part is that `api_path` is sent using the matched route template.
 
 ```bash
 source .venv/bin/activate
-python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID>
+python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 ```
 
 In the hosted environment, `404 SUMMARY_NOT_READY` is normal until the observation window ends.
+Use `--wait` to poll automatically until the summary is ready.
 
 ## What this repo demonstrates
 

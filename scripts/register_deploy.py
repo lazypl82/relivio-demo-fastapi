@@ -40,13 +40,19 @@ def main() -> None:
     )
     response.raise_for_status()
     payload = response.json()
-    deployment_id = payload.get("deployment_id")
+    deployment_id = payload.get("id") or payload.get("deployment_id")
+
+    if not deployment_id:
+        raise RuntimeError(f"deployment id missing in response: {payload}")
 
     print(f"deployment_id={deployment_id}")
     print(f"version={version}")
+    print("summary_note=In the hosted environment, the summary is usually ready after the observation window closes.")
     print("next:")
     print("  1) Trigger an error: curl http://127.0.0.1:8000/demo/fail")
-    print(f"  2) Check summary: python scripts/check_summary.py --deployment-id {deployment_id}")
+    print(
+        f"  2) Wait for the verdict: python scripts/check_summary.py --deployment-id {deployment_id} --wait"
+    )
 
 
 if __name__ == "__main__":
