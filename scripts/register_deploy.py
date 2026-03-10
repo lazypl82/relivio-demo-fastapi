@@ -32,7 +32,7 @@ def main() -> None:
             "version": version,
             "note": args.note,
             "metadata": {
-                "source": "relivio-example-fastapi",
+                "source": "relivio-demo-fastapi",
                 "environment": "demo",
             },
         },
