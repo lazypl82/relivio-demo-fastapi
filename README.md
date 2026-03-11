@@ -1,18 +1,18 @@
 # relivio-demo-fastapi
 
-Minimal FastAPI demo for seeing Relivio end-to-end in a few minutes.
+Minimal FastAPI demo for seeing Relivio wired into a backend in a few minutes.
 
-`register deploy -> trigger errors -> read verdict`
+`register deploy -> trigger failures -> read verdict`
 
-This repo is intentionally small. It is meant to help you answer one question quickly:
+This repo is intentionally small. Its job is simple:
 
-`What does Relivio look like once it is actually wired into a backend?`
+`show the shortest backend path that produces a real Relivio decision`
 
-It does three things:
+What this demo gives you:
 
-1. Shows the exact backend path where Relivio hooks in.
-2. Lets you trigger a real failing request and watch the `deploy_ack -> summary_final` flow.
-3. Gives you a minimal starting point you can adapt to your own service.
+1. A minimal FastAPI app with one shared error middleware.
+2. A concrete `deployment -> ingest -> summary` flow.
+3. A small codebase you can compare against your own service.
 
 ## Fastest path
 
@@ -80,7 +80,7 @@ summary_note=In the hosted environment, the summary is usually ready after the o
 ## 4. Trigger failures
 
 One request is enough for a wiring check.
-For a more realistic demo, use the mixed `risk` scenario so Relivio sees multiple failing fingerprints instead of one repeated error.
+For a stronger demo, use the mixed `risk` scenario so Relivio sees multiple failing fingerprints instead of one repeated error.
 
 ```bash
 curl http://127.0.0.1:8000/demo/fail
@@ -100,8 +100,12 @@ That path cycles through:
 - `/demo/fail-validation`
 
 These requests pass through one shared FastAPI error middleware, which sends `POST /api/v1/ingest/log` to Relivio.
-The important part is that `api_path` is sent using the matched route template.
-The helper script also sends a unique `x-request-id` per request so repeated demo failures are not collapsed by the idempotency key.
+
+Important details:
+
+- `api_path` is sent using the matched route template.
+- the helper script sends a unique `x-request-id` per request
+- repeated demo failures are therefore not collapsed by the idempotency key
 
 ## 5. Read the verdict
 
@@ -119,17 +123,17 @@ Use `--wait` to poll automatically until the summary is ready.
 - `POST /api/v1/ingest/log` is called by FastAPI middleware
 - `GET /api/v1/summaries/latest` is called by a lookup script
 
-This repo is not meant to be a full starter kit.
-It is meant to show the smallest concrete backend path that still produces a real Relivio decision.
+This repo is not a production starter kit.
+It is a minimal, concrete backend example that still produces a real Relivio decision.
 
-## What to look at first
+## Start here
 
 If you only want the integration shape, start here:
 
 - [app/main.py](./app/main.py)
 - [app/relivio.py](./app/relivio.py)
 
-For a first rollout, those two files are enough.
+For a first rollout, those two files are enough to understand the integration shape.
 
 ## Local routes
 
