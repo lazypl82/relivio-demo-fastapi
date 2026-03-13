@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import os
-from datetime import datetime, timezone
 
-import httpx
-from dotenv import load_dotenv
+from demo_lib import load_demo_config, register_deployment
 
 
 def main() -> None:
@@ -14,36 +11,12 @@ def main() -> None:
     parser.add_argument("--note", default="fastapi example deploy", help="Optional deployment note.")
     args = parser.parse_args()
 
-    load_dotenv()
-
-    api_base_url = os.environ["RELIVIO_API_BASE_URL"]
-    api_key = os.environ["RELIVIO_PROJECT_API_KEY"]
-    version = args.version or f"example-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-    idempotency_key = f"deploy:{version}"
-
-    response = httpx.post(
-        f"{api_base_url}/api/v1/deployments",
-        headers={
-            "Content-Type": "application/json",
-            "X-API-Key": api_key,
-            "Idempotency-Key": idempotency_key,
-        },
-        json={
-            "version": version,
-            "note": args.note,
-            "metadata": {
-                "source": "relivio-demo-fastapi",
-                "environment": "demo",
-            },
-        },
-        timeout=5.0,
+    config = load_demo_config()
+    deployment_id, version = register_deployment(
+        config,
+        version=args.version,
+        note=args.note,
     )
-    response.raise_for_status()
-    payload = response.json()
-    deployment_id = payload.get("id") or payload.get("deployment_id")
-
-    if not deployment_id:
-        raise RuntimeError(f"deployment id missing in response: {payload}")
 
     print(f"deployment_id={deployment_id}")
     print(f"version={version}")

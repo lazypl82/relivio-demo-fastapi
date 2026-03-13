@@ -1,25 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import os
 import time
-from pprint import pprint
 
-import httpx
-from dotenv import load_dotenv
-
-
-def print_summary(payload: dict[str, object]) -> None:
-    print(f"verdict={payload.get('verdict')}")
-    print(f"score={payload.get('score')}")
-    print(f"recommended_action={payload.get('recommended_action')}")
-    print(f"recommended_action_detail={payload.get('recommended_action_detail')}")
-    print(f"affected_apis={payload.get('affected_apis')}")
-
-    guidance = payload.get("protection_guidance")
-    if guidance:
-        print("protection_guidance:")
-        pprint(guidance)
+from demo_lib import fetch_summary, load_demo_config, print_summary
 
 
 def main() -> None:
@@ -40,24 +24,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    load_dotenv()
-
-    api_base_url = os.environ["RELIVIO_API_BASE_URL"]
-    api_key = os.environ["RELIVIO_PROJECT_API_KEY"]
-
-    params = {}
-    if args.deployment_id:
-        params["deployment_id"] = args.deployment_id
+    config = load_demo_config()
 
     deadline = time.monotonic() + max(args.timeout_seconds, 0.0)
 
     while True:
-        response = httpx.get(
-            f"{api_base_url}/api/v1/summaries/latest",
-            headers={"X-API-Key": api_key},
-            params=params,
-            timeout=5.0,
-        )
+        response = fetch_summary(config, deployment_id=args.deployment_id)
 
         if response.status_code != 404:
             response.raise_for_status()

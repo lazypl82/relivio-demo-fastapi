@@ -1,45 +1,41 @@
 from __future__ import annotations
 
 import argparse
-import os
-import uuid
 
-import httpx
-from dotenv import load_dotenv
+from demo_lib import (
+    default_failure_count_for_scenario,
+    load_demo_config,
+    resolve_scenario_name,
+    trigger_failures,
+)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Trigger one or more failing requests.")
     parser.add_argument("--path", default="/demo/fail", help="Path to call on the local example app.")
-    parser.add_argument("--count", type=int, default=3, help="How many times to call the failing endpoint.")
+    parser.add_argument("--count", type=int, help="How many times to call the failing endpoint.")
     parser.add_argument(
         "--scenario",
-        choices=("single", "risk"),
-        default="single",
+        choices=("single", "single-demo", "risk", "risk-demo"),
+        default="single-demo",
         help="Use one path repeatedly or cycle through a stronger risk demo mix.",
     )
     args = parser.parse_args()
 
-    load_dotenv()
-
-    app_base_url = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-    risk_paths = (
-        "/demo/fail",
-        "/demo/fail-timeout",
-        "/demo/fail-validation",
-        "/demo/fail",
+    config = load_demo_config()
+    scenario = resolve_scenario_name(args.scenario)
+    count = args.count if args.count is not None else default_failure_count_for_scenario(scenario)
+    results = trigger_failures(
+        config,
+        scenario=scenario,
+        count=count,
+        path=args.path,
     )
-
-    with httpx.Client(timeout=3.0) as client:
-        for index in range(args.count):
-            path = args.path
-            if args.scenario == "risk":
-                path = risk_paths[index % len(risk_paths)]
-            response = client.get(
-                f"{app_base_url}{path}",
-                headers={"x-request-id": f"demo-{index + 1}-{uuid.uuid4().hex[:12]}"},
-            )
-            print(f"{index + 1}: path={path} status={response.status_code} body={response.text}")
+    for result in results:
+        print(
+            f"{result['index']}: path={result['path']} "
+            f"status={result['status_code']} body={result['body']}"
+        )
 
 
 if __name__ == "__main__":

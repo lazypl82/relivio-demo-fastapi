@@ -13,6 +13,7 @@ What this demo gives you:
 1. A minimal FastAPI app with one shared error middleware.
 2. A concrete `deployment -> ingest -> summary` flow.
 3. A small codebase you can compare against your own service.
+4. A one-shot demo script that runs the full path end to end.
 
 ## Fastest path
 
@@ -20,13 +21,16 @@ If you only want the shortest working demo, use this path:
 
 ```bash
 source .venv/bin/activate
-python scripts/register_deploy.py
-python scripts/trigger_failure.py --scenario risk --count 8
-python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
+python scripts/doctor.py
+python scripts/demo_flow.py --scenario risk-demo
 ```
 
 Expected result:
 
+- doctor confirms local app + Relivio runtime auth are ready
+- deployment registration happens automatically
+- the demo app triggers failures across multiple routes
+- the script waits for the summary and prints the final verdict
 - `deploy_ack` is sent first
 - `summary_final` appears after the observation window closes
 - the mixed `risk` scenario surfaces a stronger signal than one repeated error
@@ -62,6 +66,13 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
+Optional readiness check:
+
+```bash
+source .venv/bin/activate
+python scripts/doctor.py
+```
+
 ## 3. Register a deployment
 
 ```bash
@@ -90,7 +101,7 @@ Or:
 
 ```bash
 source .venv/bin/activate
-python scripts/trigger_failure.py --scenario risk --count 8
+python scripts/trigger_failure.py --scenario risk-demo
 ```
 
 That path cycles through:
@@ -117,11 +128,29 @@ python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 In the hosted environment, `404 SUMMARY_NOT_READY` is normal until the observation window ends.
 Use `--wait` to poll automatically until the summary is ready.
 
+## One-shot demo
+
+If you want the full backend demo without copying `deployment_id` between commands:
+
+```bash
+source .venv/bin/activate
+python scripts/demo_flow.py --scenario risk-demo
+```
+
+What it does:
+
+1. checks local app health
+2. probes Relivio runtime auth with your API key
+3. registers a deployment
+4. triggers failing requests across multiple demo routes
+5. waits for the summary and prints the verdict
+
 ## What this repo demonstrates
 
 - `POST /api/v1/deployments` is called by a script
 - `POST /api/v1/ingest/log` is called by FastAPI middleware
 - `GET /api/v1/summaries/latest` is called by a lookup script
+- `python scripts/demo_flow.py` stitches the whole path together for demo use
 
 This repo is not a production starter kit.
 It is a minimal, concrete backend example that still produces a real Relivio decision.
