@@ -19,7 +19,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the full Relivio backend demo flow.")
     parser.add_argument(
         "--scenario",
-        choices=("single", "single-demo", "risk", "risk-demo"),
+        choices=(
+            "single",
+            "single-demo",
+            "stable",
+            "stable-demo",
+            "watch",
+            "watch-demo",
+            "risk",
+            "risk-demo",
+        ),
         default="risk-demo",
         help="Which failure pattern to trigger after deploy registration.",
     )
@@ -70,8 +79,12 @@ def main() -> None:
     )
     distinct_paths = sorted({str(item['path']) for item in results})
     print(
-        "4/5 failures triggered: "
+        "4/5 scenario triggered: "
         f"scenario={scenario} count={len(results)} routes={', '.join(distinct_paths)}"
+    )
+    print(
+        "5/5 summary wait: "
+        "observation window is still open; checking for the final verdict until it is ready"
     )
 
     summary = wait_for_summary(
@@ -79,6 +92,10 @@ def main() -> None:
         deployment_id=deployment_id,
         interval_seconds=args.interval_seconds,
         timeout_seconds=args.timeout_seconds,
+        on_retry=lambda attempt, interval: print(
+            "   still waiting: "
+            f"summary not ready yet (poll {attempt}, retry in {interval:g}s)"
+        ),
     )
     if summary is None:
         print("5/5 summary wait: TIMEOUT")

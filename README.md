@@ -29,12 +29,12 @@ Expected result:
 
 - doctor confirms local app + Relivio runtime auth are ready
 - deployment registration happens automatically
-- the demo app triggers failures across multiple routes
+- the demo app triggers a scenario shaped for `STABLE`, `WATCH`, or `RISK`
 - the script waits for the summary and prints the final verdict
 - `deploy_ack` is sent first
 - `summary_final` appears after the observation window closes
 - the mixed `risk` scenario surfaces a stronger signal than one repeated error
-- final verdict can still vary depending on your current Relivio baseline and scoring model
+- final verdict can still vary depending on the signals right before the deploy and your current Relivio scoring model
 
 ## 1. Setup
 
@@ -50,7 +50,7 @@ Fill in `.env` with:
 
 - `RELIVIO_API_BASE_URL`
 - `RELIVIO_PROJECT_API_KEY`
-- `RELIVIO_SERVICE_NAME` (optional, default is fine)
+- `RELIVIO_SERVICE_NAME` (optional, default is `relivio-demo-fastapi`)
 - `APP_BASE_URL` (optional, default is fine)
 
 ## 2. Run the app
@@ -84,37 +84,64 @@ Example output:
 
 ```text
 deployment_id=0195f8d8-6f3c-7d4c-bd79-8a0ab2d2a911
-version=example-20260310121500
+version=relivio-demo-20260310121500
 summary_note=In the hosted environment, the summary is usually ready after the observation window closes.
 ```
 
-## 4. Trigger failures
+Current default marker shape:
+
+- `version`: `relivio-demo-<timestamp>`
+- deployment metadata:
+  - `source=relivio-demo-fastapi`
+  - `environment=demo`
+  - `demo_flow=true`
+- log `service`: `relivio-demo-fastapi`
+
+These markers make demo runs easier to identify and exclude later from tuning or governance exports.
+
+## 4. Trigger a scenario
 
 One request is enough for a wiring check.
-For a stronger demo, use the mixed `risk` scenario so Relivio sees multiple failing fingerprints instead of one repeated error.
+For a more convincing demo, use one of the shaped scenarios below.
 
 ```bash
-curl http://127.0.0.1:8000/demo/fail
+curl http://127.0.0.1:8000/demo/profile/transient-warning
 ```
 
 Or:
 
 ```bash
 source .venv/bin/activate
-python scripts/trigger_failure.py --scenario risk-demo
+python scripts/trigger_failure.py --scenario watch-demo
 ```
 
-That path cycles through:
+Current scenario presets:
 
-- `/demo/fail`
-- `/demo/fail-timeout`
-- `/demo/fail-validation`
+- `stable-demo`
+  - one transient warning on `/api/profile/update`
+  - intended to feel like "keep observing"
+- `watch-demo`
+  - warnings and errors concentrated on `/api/orders/{order_id}/commit`
+  - intended to feel like "guard-ready, not rollback-grade"
+- `risk-demo`
+  - errors spread across checkout and payments routes
+  - intended to feel like broader rollback-grade risk
 
-These requests pass through one shared FastAPI error middleware, which sends `POST /api/v1/ingest/log` to Relivio.
+Demo routes used under the hood:
+
+- `/demo/profile/transient-warning`
+- `/demo/orders/guard-warning`
+- `/demo/orders/guard-error`
+- `/demo/checkout/submit-error`
+- `/demo/checkout/status-error`
+- `/demo/payments/capture-error`
+
+Warnings are sent directly to Relivio with a production-like `api_path`.
+Unhandled errors still pass through one shared FastAPI middleware, which sends `POST /api/v1/ingest/log` to Relivio.
 
 Important details:
 
-- `api_path` is sent using the matched route template.
+- `api_path` is sent as a production-like route template such as `/api/orders/{order_id}/commit`.
 - the helper script sends a unique `x-request-id` per request
 - repeated demo failures are therefore not collapsed by the idempotency key
 
@@ -127,6 +154,16 @@ python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 
 In the hosted environment, `404 SUMMARY_NOT_READY` is normal until the observation window ends.
 Use `--wait` to poll automatically until the summary is ready.
+
+What the summary script prints:
+
+- `verdict`
+- `decision_tier`
+- `score`
+- `recommended_action`
+- `recommended_action_detail`
+- `affected_apis`
+- a short `content_preview`
 
 ## One-shot demo
 
@@ -142,8 +179,8 @@ What it does:
 1. checks local app health
 2. probes Relivio runtime auth with your API key
 3. registers a deployment
-4. triggers failing requests across multiple demo routes
-5. waits for the summary and prints the verdict
+4. triggers a shaped stable/watch/risk scenario across multiple demo routes
+5. waits for the summary, prints retry progress, then prints the verdict + decision tier
 
 ## What this repo demonstrates
 
@@ -154,6 +191,8 @@ What it does:
 
 This repo is not a production starter kit.
 It is a minimal, concrete backend example that still produces a real Relivio decision.
+
+Because this demo uses the real runtime path, each run persists deployment, ingest, and summary records in the target Relivio project. Use a dedicated demo project or API key, not a project you plan to treat as clean learning data later.
 
 ## Start here
 
@@ -168,6 +207,12 @@ For a first rollout, those two files are enough to understand the integration sh
 
 - `GET /health`
 - `GET /demo/ok`
+- `GET /demo/profile/transient-warning`
+- `GET /demo/orders/guard-warning`
+- `GET /demo/orders/guard-error`
+- `GET /demo/checkout/submit-error`
+- `GET /demo/checkout/status-error`
+- `GET /demo/payments/capture-error`
 - `GET /demo/fail`
 - `GET /demo/fail-timeout`
 - `GET /demo/fail-validation`

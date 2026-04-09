@@ -16,9 +16,18 @@ def main() -> None:
     parser.add_argument("--count", type=int, help="How many times to call the failing endpoint.")
     parser.add_argument(
         "--scenario",
-        choices=("single", "single-demo", "risk", "risk-demo"),
+        choices=(
+            "single",
+            "single-demo",
+            "stable",
+            "stable-demo",
+            "watch",
+            "watch-demo",
+            "risk",
+            "risk-demo",
+        ),
         default="single-demo",
-        help="Use one path repeatedly or cycle through a stronger risk demo mix.",
+        help="Run a minimal stable/watch/risk-shaped demo sequence.",
     )
     args = parser.parse_args()
 

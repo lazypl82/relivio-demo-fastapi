@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pprint import pprint
@@ -38,8 +39,8 @@ def load_demo_config() -> DemoConfig:
     return DemoConfig(
         relivio_api_base_url=api_base_url.rstrip("/"),
         relivio_project_api_key=api_key,
-        relivio_service_name=(os.getenv("RELIVIO_SERVICE_NAME") or "example-fastapi").strip()
-        or "example-fastapi",
+        relivio_service_name=(os.getenv("RELIVIO_SERVICE_NAME") or "relivio-demo-fastapi").strip()
+        or "relivio-demo-fastapi",
         app_base_url=(os.getenv("APP_BASE_URL") or "http://127.0.0.1:8000").strip().rstrip("/"),
     )
 
@@ -49,6 +50,10 @@ def resolve_scenario_name(raw: str) -> str:
     aliases = {
         "single": "single-demo",
         "single-demo": "single-demo",
+        "stable": "stable-demo",
+        "stable-demo": "stable-demo",
+        "watch": "watch-demo",
+        "watch-demo": "watch-demo",
         "risk": "risk-demo",
         "risk-demo": "risk-demo",
     }
@@ -58,12 +63,16 @@ def resolve_scenario_name(raw: str) -> str:
 
 
 def default_failure_count_for_scenario(scenario: str) -> int:
-    if scenario == "single-demo":
-        return 1
-    return 8
+    defaults = {
+        "single-demo": 1,
+        "stable-demo": 1,
+        "watch-demo": 4,
+        "risk-demo": 8,
+    }
+    return defaults.get(scenario, 1)
 
 
-def build_deploy_version(prefix: str = "example") -> str:
+def build_deploy_version(prefix: str = "relivio-demo") -> str:
     return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
 
@@ -114,6 +123,7 @@ def register_deployment(
             "metadata": {
                 "source": "relivio-demo-fastapi",
                 "environment": "demo",
+                "demo_flow": "true",
             },
         },
         timeout=5.0,
@@ -134,18 +144,31 @@ def trigger_failures(
     path: str = "/demo/fail",
 ) -> list[dict[str, object]]:
     resolved_scenario = resolve_scenario_name(scenario)
-    risk_paths = (
-        "/demo/fail",
-        "/demo/fail-timeout",
-        "/demo/fail-validation",
-        "/demo/fail",
-    )
+    scenario_paths: dict[str, tuple[str, ...]] = {
+        "single-demo": (path,),
+        "stable-demo": ("/demo/profile/transient-warning",),
+        "watch-demo": (
+            "/demo/orders/guard-warning",
+            "/demo/orders/guard-warning",
+            "/demo/orders/guard-error",
+            "/demo/orders/guard-error",
+        ),
+        "risk-demo": (
+            "/demo/checkout/submit-error",
+            "/demo/payments/capture-error",
+            "/demo/checkout/status-error",
+            "/demo/checkout/submit-error",
+            "/demo/payments/capture-error",
+            "/demo/checkout/status-error",
+            "/demo/checkout/submit-error",
+            "/demo/payments/capture-error",
+        ),
+    }
+    planned_paths = scenario_paths.get(resolved_scenario, (path,))
     results: list[dict[str, object]] = []
     with httpx.Client(timeout=3.0) as client:
         for index in range(count):
-            resolved_path = path
-            if resolved_scenario == "risk-demo":
-                resolved_path = risk_paths[index % len(risk_paths)]
+            resolved_path = planned_paths[index % len(planned_paths)]
             response = client.get(
                 f"{config.app_base_url}{resolved_path}",
                 headers={"x-request-id": f"demo-{index + 1}-{uuid.uuid4().hex[:12]}"},
@@ -183,8 +206,10 @@ def wait_for_summary(
     deployment_id: str | None,
     interval_seconds: float,
     timeout_seconds: float,
+    on_retry: Callable[[int, float], None] | None = None,
 ) -> dict[str, object] | None:
     deadline = time.monotonic() + max(timeout_seconds, 0.0)
+    attempt = 0
 
     while True:
         response = fetch_summary(config, deployment_id=deployment_id)
@@ -195,15 +220,24 @@ def wait_for_summary(
         if time.monotonic() >= deadline:
             return None
 
+        attempt += 1
+        if on_retry is not None:
+            on_retry(attempt, interval_seconds)
         time.sleep(max(interval_seconds, 0.5))
 
 
 def print_summary(payload: dict[str, object]) -> None:
     print(f"verdict={payload.get('verdict')}")
+    print(f"decision_tier={payload.get('decision_tier')}")
     print(f"score={payload.get('score')}")
     print(f"recommended_action={payload.get('recommended_action')}")
     print(f"recommended_action_detail={payload.get('recommended_action_detail')}")
     print(f"affected_apis={payload.get('affected_apis')}")
+    content = payload.get("content")
+    if isinstance(content, str) and content.strip():
+        first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+        if first_line:
+            print(f"content_preview={first_line}")
 
     guidance = payload.get("protection_guidance")
     if guidance:
