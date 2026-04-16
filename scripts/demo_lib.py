@@ -11,6 +11,14 @@ from pprint import pprint
 import httpx
 from dotenv import load_dotenv
 
+from demo_scenarios import (
+    default_failure_count_for_scenario,
+    describe_scenarios,
+    get_scenario_definition,
+    planned_paths_for_scenario,
+    resolve_scenario_name,
+)
+
 
 @dataclass(frozen=True)
 class DemoConfig:
@@ -43,34 +51,6 @@ def load_demo_config() -> DemoConfig:
         or "relivio-demo-fastapi",
         app_base_url=(os.getenv("APP_BASE_URL") or "http://127.0.0.1:8000").strip().rstrip("/"),
     )
-
-
-def resolve_scenario_name(raw: str) -> str:
-    normalized = raw.strip().lower()
-    aliases = {
-        "single": "single-demo",
-        "single-demo": "single-demo",
-        "stable": "stable-demo",
-        "stable-demo": "stable-demo",
-        "watch": "watch-demo",
-        "watch-demo": "watch-demo",
-        "risk": "risk-demo",
-        "risk-demo": "risk-demo",
-    }
-    if normalized not in aliases:
-        raise RuntimeError(f"Unsupported scenario: {raw}")
-    return aliases[normalized]
-
-
-def default_failure_count_for_scenario(scenario: str) -> int:
-    defaults = {
-        "single-demo": 1,
-        "stable-demo": 1,
-        "watch-demo": 4,
-        "risk-demo": 8,
-    }
-    return defaults.get(scenario, 1)
-
 
 def build_deploy_version(prefix: str = "relivio-demo") -> str:
     return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -144,27 +124,7 @@ def trigger_failures(
     path: str = "/demo/fail",
 ) -> list[dict[str, object]]:
     resolved_scenario = resolve_scenario_name(scenario)
-    scenario_paths: dict[str, tuple[str, ...]] = {
-        "single-demo": (path,),
-        "stable-demo": ("/demo/profile/transient-warning",),
-        "watch-demo": (
-            "/demo/orders/guard-warning",
-            "/demo/orders/guard-warning",
-            "/demo/orders/guard-error",
-            "/demo/orders/guard-error",
-        ),
-        "risk-demo": (
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
-            "/demo/checkout/status-error",
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
-            "/demo/checkout/status-error",
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
-        ),
-    }
-    planned_paths = scenario_paths.get(resolved_scenario, (path,))
+    planned_paths = (path,) if resolved_scenario == "single-demo" else planned_paths_for_scenario(resolved_scenario)
     results: list[dict[str, object]] = []
     with httpx.Client(timeout=3.0) as client:
         for index in range(count):
@@ -182,6 +142,38 @@ def trigger_failures(
                 }
             )
     return results
+
+
+def summarize_trigger_results(results: list[dict[str, object]]) -> dict[str, object]:
+    status_counts: dict[int, int] = {}
+    path_counts: dict[str, int] = {}
+    for item in results:
+        status_code = int(item["status_code"])
+        path = str(item["path"])
+        status_counts[status_code] = status_counts.get(status_code, 0) + 1
+        path_counts[path] = path_counts.get(path, 0) + 1
+    return {
+        "total": len(results),
+        "status_counts": status_counts,
+        "path_counts": path_counts,
+    }
+
+
+def print_scenario_catalog() -> None:
+    print("Available demo scenarios")
+    for item in describe_scenarios():
+        print(
+            f"- {item['name']} ({', '.join(str(name) for name in item['all_names'])})"
+        )
+        print(f"  intended_outcome={item['intended_outcome']}")
+        print(f"  default_count={item['default_count']}")
+        print(f"  manual_route={item['manual_route']}")
+        print(f"  summary={item['summary']}")
+
+
+def scenario_details(raw: str) -> dict[str, object]:
+    scenario = get_scenario_definition(raw)
+    return scenario.to_dict()
 
 
 def fetch_summary(

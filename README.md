@@ -22,6 +22,7 @@ If you only want the shortest working demo, use this path:
 ```bash
 source .venv/bin/activate
 python scripts/doctor.py
+python scripts/trigger_failure.py --list-scenarios
 python scripts/demo_flow.py --scenario risk-demo
 ```
 
@@ -66,6 +67,12 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
+Scenario catalog:
+
+```bash
+curl http://127.0.0.1:8000/demo/scenarios
+```
+
 Optional readiness check:
 
 ```bash
@@ -102,7 +109,20 @@ These markers make demo runs easier to identify and exclude later from tuning or
 ## 4. Trigger a scenario
 
 One request is enough for a wiring check.
-For a more convincing demo, use one of the shaped scenarios below.
+For a more convincing demo, inspect the scenario catalog first, then use one of the shaped scenarios below.
+
+List the available scenarios from the terminal:
+
+```bash
+source .venv/bin/activate
+python scripts/trigger_failure.py --list-scenarios
+```
+
+Or inspect them from the app:
+
+```bash
+curl http://127.0.0.1:8000/demo/scenarios
+```
 
 ```bash
 curl http://127.0.0.1:8000/demo/profile/transient-warning
@@ -144,6 +164,7 @@ Important details:
 - `api_path` is sent as a production-like route template such as `/api/orders/{order_id}/commit`.
 - the helper script sends a unique `x-request-id` per request
 - repeated demo failures are therefore not collapsed by the idempotency key
+- `GET /demo/scenarios/{scenario}` returns one scenario definition for quick inspection
 
 ## 5. Read the verdict
 
@@ -179,7 +200,7 @@ What it does:
 1. checks local app health
 2. probes Relivio runtime auth with your API key
 3. registers a deployment
-4. triggers a shaped stable/watch/risk scenario across multiple demo routes
+4. prints the selected scenario intent, then triggers the shaped stable/watch/risk sequence
 5. waits for the summary, prints retry progress, then prints the verdict + decision tier
 
 ## What this repo demonstrates
@@ -205,7 +226,10 @@ For a first rollout, those two files are enough to understand the integration sh
 
 ## Local routes
 
+- `GET /`
 - `GET /health`
+- `GET /demo/scenarios`
+- `GET /demo/scenarios/{scenario}`
 - `GET /demo/ok`
 - `GET /demo/profile/transient-warning`
 - `GET /demo/orders/guard-warning`

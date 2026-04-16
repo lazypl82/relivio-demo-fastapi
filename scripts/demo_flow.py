@@ -6,31 +6,31 @@ from demo_lib import (
     check_app_health,
     default_failure_count_for_scenario,
     load_demo_config,
+    print_scenario_catalog,
     print_summary,
     probe_relivio_runtime,
     register_deployment,
     resolve_scenario_name,
+    scenario_details,
+    summarize_trigger_results,
     trigger_failures,
     wait_for_summary,
 )
+from demo_scenarios import scenario_choices
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the full Relivio backend demo flow.")
     parser.add_argument(
         "--scenario",
-        choices=(
-            "single",
-            "single-demo",
-            "stable",
-            "stable-demo",
-            "watch",
-            "watch-demo",
-            "risk",
-            "risk-demo",
-        ),
+        choices=scenario_choices(),
         default="risk-demo",
         help="Which failure pattern to trigger after deploy registration.",
+    )
+    parser.add_argument(
+        "--list-scenarios",
+        action="store_true",
+        help="Print the available demo scenarios and exit.",
     )
     parser.add_argument("--count", type=int, help="Override how many failing requests to trigger.")
     parser.add_argument("--version", help="Optional deployment version label.")
@@ -49,11 +49,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.list_scenarios:
+        print_scenario_catalog()
+        return
+
     config = load_demo_config()
     scenario = resolve_scenario_name(args.scenario)
     count = args.count if args.count is not None else default_failure_count_for_scenario(scenario)
+    details = scenario_details(scenario)
 
     print("Relivio backend demo flow")
+    print(
+        "scenario: "
+        f"{details['name']} | intended_outcome={details['intended_outcome']} | "
+        f"default_count={details['default_count']}"
+    )
+    print(f"scenario_summary: {details['summary']}")
 
     app_ok, app_message = check_app_health(config)
     print(f"1/5 app health: {'OK' if app_ok else 'FAIL'} - {app_message}")
@@ -78,10 +89,15 @@ def main() -> None:
         count=count,
     )
     distinct_paths = sorted({str(item['path']) for item in results})
+    trigger_summary = summarize_trigger_results(results)
+    status_summary = ", ".join(
+        f"{status}x{count}" for status, count in sorted(trigger_summary["status_counts"].items())
+    )
     print(
         "4/5 scenario triggered: "
         f"scenario={scenario} count={len(results)} routes={', '.join(distinct_paths)}"
     )
+    print(f"   trigger_statuses: {status_summary}")
     print(
         "5/5 summary wait: "
         "observation window is still open; checking for the final verdict until it is ready"

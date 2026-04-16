@@ -5,15 +5,43 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.relivio import emit_demo_signal, ingest_unhandled_error
+from scripts.demo_scenarios import describe_scenarios, get_scenario_definition
 
 load_dotenv()
 
 app = FastAPI(title="Relivio FastAPI Example")
 
 
+@app.get("/")
+async def root() -> dict[str, object]:
+    return {
+        "service": "relivio-demo-fastapi",
+        "status": "ok",
+        "quickstart": [
+            "GET /health",
+            "GET /demo/scenarios",
+            "Run python scripts/demo_flow.py --scenario risk-demo",
+        ],
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/demo/scenarios")
+async def demo_scenarios() -> dict[str, object]:
+    return {
+        "count": len(describe_scenarios()),
+        "scenarios": describe_scenarios(),
+    }
+
+
+@app.get("/demo/scenarios/{scenario_name}")
+async def demo_scenario_detail(scenario_name: str) -> dict[str, object]:
+    scenario = get_scenario_definition(scenario_name)
+    return scenario.to_dict()
 
 
 @app.get("/demo/ok")
