@@ -2,7 +2,7 @@
 
 Minimal FastAPI demo for seeing Relivio wired into a backend in a few minutes.
 
-`register deploy -> trigger failures -> read verdict`
+`register deploy with SDK -> trigger failures -> read verdict through MCP`
 
 This repo is intentionally small. Its job is simple:
 
@@ -11,9 +11,10 @@ This repo is intentionally small. Its job is simple:
 What this demo gives you:
 
 1. A minimal FastAPI app with one shared error middleware.
-2. A concrete `deployment -> ingest -> summary` flow.
+2. A concrete `deployment -> ingest -> verdict` flow using the current public surfaces.
 3. A small codebase you can compare against your own service.
-4. A one-shot demo script that runs the full path end to end.
+4. A one-shot demo script that runs the full SDK + MCP path end to end.
+5. A small MCP read path so you can recover the newest `deployment_id` without copying it around manually.
 
 ## Fastest path
 
@@ -23,7 +24,7 @@ If you only want the shortest working demo, use this path:
 source .venv/bin/activate
 python scripts/doctor.py
 python scripts/trigger_failure.py --list-scenarios
-python scripts/demo_flow.py --scenario risk-demo
+python scripts/demo_agent_cycle.py --scenario risk-demo
 ```
 
 Expected result:
@@ -31,7 +32,7 @@ Expected result:
 - doctor confirms local app + Relivio runtime auth are ready
 - deployment registration happens automatically
 - the demo app triggers a scenario shaped for `STABLE`, `WATCH`, or `RISK`
-- the script waits for the summary and prints the final verdict
+- the script waits through MCP and prints the final verdict
 - `deploy_ack` is sent first
 - `summary_final` appears after the observation window closes
 - the mixed `risk` scenario surfaces a stronger signal than one repeated error
@@ -44,6 +45,7 @@ cd relivio-demo-fastapi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm install -g relivio-mcp@0.2.0
 cp .env.example .env
 ```
 
@@ -53,6 +55,7 @@ Fill in `.env` with:
 - `RELIVIO_PROJECT_API_KEY`
 - `RELIVIO_SERVICE_NAME` (optional, default is `relivio-demo-fastapi`)
 - `APP_BASE_URL` (optional, default is fine)
+- `RELIVIO_MCP_COMMAND` (optional, default is `relivio-mcp`)
 
 ## 2. Run the app
 
@@ -105,6 +108,19 @@ Current default marker shape:
 - log `service`: `relivio-demo-fastapi`
 
 These markers make demo runs easier to identify and exclude later from tuning or governance exports.
+
+If you want to confirm what the target project has seen most recently from the agent side:
+
+```bash
+source .venv/bin/activate
+python scripts/list_recent_deployments.py
+```
+
+That uses the runtime read surface:
+
+- `relivio-mcp`
+- `list_recent_deployments`
+- project-scoped recent deployments only
 
 ## 4. Trigger a scenario
 
@@ -168,9 +184,27 @@ Important details:
 
 ## 5. Read the verdict
 
+Agent-side read path through MCP:
+
+```bash
+source .venv/bin/activate
+python scripts/check_verdict_via_mcp.py --latest-deployment --wait
+```
+
+That flow resolves the newest deployment id through MCP, then keeps polling `get_verdict` until the observation window closes.
+
+If you want the lower-level runtime summary directly:
+
 ```bash
 source .venv/bin/activate
 python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
+```
+
+If you do not want to copy the id manually on the direct runtime path:
+
+```bash
+source .venv/bin/activate
+python scripts/check_summary.py --latest-deployment --wait
 ```
 
 In the hosted environment, `404 SUMMARY_NOT_READY` is normal until the observation window ends.
@@ -188,32 +222,40 @@ What the summary script prints:
 
 ## One-shot demo
 
-If you want the full backend demo without copying `deployment_id` between commands:
+If you want the full backend demo on the current public surfaces without copying `deployment_id` between commands:
 
 ```bash
 source .venv/bin/activate
-python scripts/demo_flow.py --scenario risk-demo
+python scripts/demo_agent_cycle.py --scenario risk-demo
 ```
 
 What it does:
 
 1. checks local app health
-2. probes Relivio runtime auth with your API key
-3. registers a deployment
+2. probes the SDK runtime path with your API key
+3. registers a deployment through `relivio-sdk-python`
 4. prints the selected scenario intent, then triggers the shaped stable/watch/risk sequence
-5. waits for the summary, prints retry progress, then prints the verdict + decision tier
+5. resolves the newest deployment through `relivio-mcp`
+6. waits for the verdict through `relivio-mcp`, then prints the verdict + decision tier
 
 ## What this repo demonstrates
 
-- `POST /api/v1/deployments` is called by a script
-- `POST /api/v1/ingest/log` is called by FastAPI middleware
-- `GET /api/v1/summaries/latest` is called by a lookup script
-- `python scripts/demo_flow.py` stitches the whole path together for demo use
+- `relivio-sdk-python` is used for deployment registration
+- `relivio-sdk-python` is used in the FastAPI middleware for ingest
+- `relivio-mcp` is used to list recent deployments and read deploy verdicts
+- `python scripts/demo_agent_cycle.py` stitches the full SDK + MCP path together for demo use
+- `python scripts/list_recent_deployments.py` reads the newest project-scoped deployment ids through MCP
+- `python scripts/check_verdict_via_mcp.py --latest-deployment --wait` reads the newest deployment verdict through MCP
+- `python scripts/check_summary.py --latest-deployment --wait` remains as a lower-level runtime summary inspection path
 
 This repo is not a production starter kit.
 It is a minimal, concrete backend example that still produces a real Relivio decision.
 
 Because this demo uses the real runtime path, each run persists deployment, ingest, and summary records in the target Relivio project. Use a dedicated demo project or API key, not a project you plan to treat as clean learning data later.
+
+This repo still treats deploy registration as a deploy-boundary action.
+It does not register deployments from app startup hooks.
+The server-side multi-worker dedup path is a safety net, not the preferred integration shape.
 
 ## Start here
 

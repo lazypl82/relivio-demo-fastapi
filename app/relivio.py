@@ -5,8 +5,8 @@ import traceback
 import uuid
 from dataclasses import dataclass
 
-import httpx
 from fastapi import Request
+from relivio import IngestLogInput, Relivio
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,13 @@ def build_idempotency_key(request_id: str, api_path: str, error_type: str) -> st
     return f"log:{request_id}:{api_path}:{error_type}"
 
 
+def build_relivio_client(config: RelivioConfig) -> Relivio:
+    return Relivio(
+        api_key=config.api_key,
+        base_url=config.api_base_url,
+    )
+
+
 async def emit_demo_signal(
     request: Request,
     *,
@@ -53,28 +60,19 @@ async def emit_demo_signal(
 ) -> None:
     config = load_relivio_config()
     request_id = request.headers.get("x-request-id") or f"req-{uuid.uuid4().hex}"
-    payload = {
-        "level": level,
-        "message": message,
-        "service": config.service_name,
-        "api_path": api_path,
-        "stacktrace": stacktrace,
-        "trace_id": request_id,
-        "error_type": error_type,
-    }
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-API-Key": config.api_key,
-        "Idempotency-Key": build_idempotency_key(request_id, api_path, error_type),
-    }
-
-    async with httpx.AsyncClient(timeout=3.0) as client:
-        await client.post(
-            f"{config.api_base_url}/api/v1/ingest/log",
-            json=payload,
-            headers=headers,
+    client = build_relivio_client(config)
+    await client.ingest.asend(
+        IngestLogInput(
+            level=level,
+            message=message,
+            service=config.service_name,
+            api_path=api_path,
+            stacktrace=stacktrace,
+            trace_id=request_id,
+            error_type=error_type,
+            idempotency_key=build_idempotency_key(request_id, api_path, error_type),
         )
+    )
 
 
 async def ingest_unhandled_error(request: Request, exc: Exception) -> None:

@@ -20,7 +20,7 @@ async def root() -> dict[str, object]:
         "quickstart": [
             "GET /health",
             "GET /demo/scenarios",
-            "Run python scripts/demo_flow.py --scenario risk-demo",
+            "Run python scripts/demo_agent_cycle.py --scenario risk-demo",
         ],
     }
 

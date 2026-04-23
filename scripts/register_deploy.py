@@ -22,10 +22,11 @@ def main() -> None:
     print(f"version={version}")
     print("summary_note=In the hosted environment, the summary is usually ready after the observation window closes.")
     print("next:")
-    print("  1) List demo scenarios: python scripts/trigger_failure.py --list-scenarios")
-    print("  2) Trigger a stronger demo scenario: python scripts/trigger_failure.py --scenario watch-demo")
+    print("  1) List recent deployments via MCP: python scripts/list_recent_deployments.py")
+    print("  2) List demo scenarios: python scripts/trigger_failure.py --list-scenarios")
+    print("  3) Trigger a stronger demo scenario: python scripts/trigger_failure.py --scenario watch-demo")
     print(
-        f"  3) Wait for the verdict: python scripts/check_summary.py --deployment-id {deployment_id} --wait"
+        f"  4) Wait for the verdict via MCP: python scripts/check_verdict_via_mcp.py --deployment-id {deployment_id} --wait"
     )
 
 

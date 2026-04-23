@@ -28,6 +28,15 @@ class DemoConfig:
     app_base_url: str
 
 
+def build_relivio_client(config: DemoConfig):
+    from relivio import Relivio
+
+    return Relivio(
+        api_key=config.relivio_project_api_key,
+        base_url=config.relivio_api_base_url,
+    )
+
+
 def load_demo_config() -> DemoConfig:
     load_dotenv()
 
@@ -67,20 +76,17 @@ def check_app_health(config: DemoConfig) -> tuple[bool, str]:
 
 
 def probe_relivio_runtime(config: DemoConfig) -> tuple[bool, str]:
-    try:
-        response = httpx.get(
-            f"{config.relivio_api_base_url}/api/v1/summaries/latest",
-            headers={"X-API-Key": config.relivio_project_api_key},
-            timeout=5.0,
-        )
-    except httpx.HTTPError as exc:
-        return False, f"Relivio runtime probe failed: {exc}"
+    from relivio import RelivioApiError
 
-    if response.status_code in {200, 404}:
-        return True, f"Relivio runtime probe returned {response.status_code}"
-    if response.status_code == 401:
-        return False, "Relivio runtime probe returned 401. Check RELIVIO_PROJECT_API_KEY."
-    return False, f"Relivio runtime probe returned {response.status_code}: {response.text}"
+    try:
+        build_relivio_client(config).verdicts.latest()
+    except RelivioApiError as exc:
+        if exc.status == 401:
+            return False, "Relivio runtime probe returned 401. Check RELIVIO_PROJECT_API_KEY."
+        return False, f"Relivio runtime probe failed with status {exc.status}: {exc}"
+    except Exception as exc:
+        return False, f"Relivio runtime probe failed: {exc}"
+    return True, "Relivio runtime probe reached the project-scoped verdict surface"
 
 
 def register_deployment(
@@ -89,31 +95,22 @@ def register_deployment(
     version: str | None = None,
     note: str = "fastapi example deploy",
 ) -> tuple[str, str]:
+    from relivio import RegisterDeploymentInput
+
     resolved_version = version or build_deploy_version()
-    response = httpx.post(
-        f"{config.relivio_api_base_url}/api/v1/deployments",
-        headers={
-            "Content-Type": "application/json",
-            "X-API-Key": config.relivio_project_api_key,
-            "Idempotency-Key": f"deploy:{resolved_version}",
-        },
-        json={
-            "version": resolved_version,
-            "note": note,
-            "metadata": {
+    response = build_relivio_client(config).deployments.register(
+        RegisterDeploymentInput(
+            version=resolved_version,
+            note=note,
+            metadata={
                 "source": "relivio-demo-fastapi",
                 "environment": "demo",
                 "demo_flow": "true",
             },
-        },
-        timeout=5.0,
+            idempotency_key=f"deploy:{resolved_version}",
+        )
     )
-    response.raise_for_status()
-    payload = response.json()
-    deployment_id = payload.get("id") or payload.get("deployment_id")
-    if not deployment_id:
-        raise RuntimeError(f"deployment id missing in response: {payload}")
-    return str(deployment_id), resolved_version
+    return response.id, resolved_version
 
 
 def trigger_failures(
@@ -190,6 +187,63 @@ def fetch_summary(
         params=params,
         timeout=5.0,
     )
+
+
+def fetch_recent_deployments(
+    config: DemoConfig,
+    *,
+    limit: int = 5,
+) -> httpx.Response:
+    return httpx.get(
+        f"{config.relivio_api_base_url}/api/v1/deployments/recent",
+        headers={"X-API-Key": config.relivio_project_api_key},
+        params={"limit": max(1, min(int(limit), 20))},
+        timeout=5.0,
+    )
+
+
+def list_recent_deployments(
+    config: DemoConfig,
+    *,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    response = fetch_recent_deployments(config, limit=limit)
+    response.raise_for_status()
+    payload = response.json()
+    items = payload.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(f"recent deployments payload missing items: {payload}")
+    return [item for item in items if isinstance(item, dict)]
+
+
+def resolve_latest_deployment_id(
+    config: DemoConfig,
+    *,
+    limit: int = 5,
+) -> str | None:
+    items = list_recent_deployments(config, limit=limit)
+    if not items:
+        return None
+    deployment_id = items[0].get("deployment_id")
+    if not deployment_id:
+        return None
+    return str(deployment_id)
+
+
+def print_recent_deployments(items: list[dict[str, object]]) -> None:
+    if not items:
+        print("No recent deployments found.")
+        return
+
+    for index, item in enumerate(items, start=1):
+        deployment_id = item.get("deployment_id")
+        version = item.get("version")
+        deployed_at = item.get("deployed_at")
+        window_status = item.get("window_status")
+        print(
+            f"{index}. deployment_id={deployment_id} "
+            f"version={version} deployed_at={deployed_at} window_status={window_status}"
+        )
 
 
 def wait_for_summary(
