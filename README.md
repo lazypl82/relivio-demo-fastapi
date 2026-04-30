@@ -233,15 +233,15 @@ What it does:
 
 1. checks local app health
 2. probes the SDK runtime path with your API key
-3. registers a deployment through `relivio-sdk-python`
+3. registers a deployment through the `relivio` Python SDK
 4. prints the selected scenario intent, then triggers the shaped stable/watch/risk sequence
 5. resolves the newest deployment through `relivio-mcp`
 6. waits for the verdict through `relivio-mcp`, then prints the verdict + decision tier
 
 ## What this repo demonstrates
 
-- `relivio-sdk-python` is used for deployment registration
-- `relivio-sdk-python` is used in the FastAPI middleware for ingest
+- the `relivio` Python SDK is used for deployment registration
+- the `relivio` Python SDK is used inside a user-written FastAPI middleware for ingest
 - `relivio-mcp` is used to list recent deployments and read deploy verdicts
 - `python scripts/demo_agent_cycle.py` stitches the full SDK + MCP path together for demo use
 - `python scripts/list_recent_deployments.py` reads the newest project-scoped deployment ids through MCP
