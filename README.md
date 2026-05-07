@@ -1,284 +1,131 @@
 # relivio-demo-fastapi
 
-Minimal FastAPI demo for seeing Relivio wired into a backend in a few minutes.
+Minimal FastAPI service that emits real Relivio deployment and runtime signals through the public Python SDK.
 
-`register deploy with SDK -> trigger failures -> read verdict through MCP`
+This repo demonstrates the client-service side of a Relivio integration:
 
-This repo is intentionally small. Its job is simple:
+`register deployment with SDK -> emit post-deploy signals with SDK -> inspect verdict from an external agent or fallback summary read`
 
-`show the shortest backend path that produces a real Relivio decision`
+It intentionally does not call MCP from inside the demo app. MCP is an agent/client consumption path, not an application runtime dependency.
 
-What this demo gives you:
+## What This Shows
 
-1. A minimal FastAPI app with one shared error middleware.
-2. A concrete `deployment -> ingest -> verdict` flow using the current public surfaces.
-3. A small codebase you can compare against your own service.
-4. A one-shot demo script that runs the full SDK + MCP path end to end.
-5. A small MCP read path so you can recover the newest `deployment_id` without copying it around manually.
+- A deploy-boundary `deployment.register` call.
+- A FastAPI exception boundary that uses `relivio.acapture_exception(...)`.
+- A `trace_id_provider` wired through `ContextVar`.
+- A few shaped local signals that can produce `STABLE`, `WATCH`, or `RISK` verdicts after the observation window.
+- A raw HTTP fallback script for inspecting the summary if you are not using an MCP-enabled agent.
 
-## Fastest path
-
-If you only want the shortest working demo, use this path:
-
-```bash
-source .venv/bin/activate
-python scripts/doctor.py
-python scripts/trigger_failure.py --list-scenarios
-python scripts/demo_agent_cycle.py --scenario risk-demo
-```
-
-Expected result:
-
-- doctor confirms local app + Relivio runtime auth are ready
-- deployment registration happens automatically
-- the demo app triggers a scenario shaped for `STABLE`, `WATCH`, or `RISK`
-- the script waits through MCP and prints the final verdict
-- `deploy_ack` is sent first
-- `summary_final` appears after the observation window closes
-- the mixed `risk` scenario surfaces a stronger signal than one repeated error
-- final verdict can still vary depending on the signals right before the deploy and your current Relivio scoring model
-
-## 1. Setup
+## Setup
 
 ```bash
 cd relivio-demo-fastapi
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-npm install -g relivio-mcp@0.2.0
 cp .env.example .env
 ```
 
-Fill in `.env` with:
+Fill `.env` with:
 
 - `RELIVIO_API_BASE_URL`
 - `RELIVIO_PROJECT_API_KEY`
-- `RELIVIO_SERVICE_NAME` (optional, default is `relivio-demo-fastapi`)
-- `APP_BASE_URL` (optional, default is fine)
-- `RELIVIO_MCP_COMMAND` (optional, default is `relivio-mcp`)
+- `RELIVIO_SERVICE_NAME` optional, defaults to `relivio-demo-fastapi`
+- `APP_BASE_URL` optional, defaults to `http://127.0.0.1:8000`
 
-## 2. Run the app
+## Run The App
 
 ```bash
 source .venv/bin/activate
 uvicorn app.main:app --reload
 ```
 
-Health check:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Scenario catalog:
-
-```bash
-curl http://127.0.0.1:8000/demo/scenarios
-```
-
-Optional readiness check:
+In another terminal:
 
 ```bash
 source .venv/bin/activate
 python scripts/doctor.py
+python scripts/run_demo.py --scenario risk-demo
 ```
 
-## 3. Register a deployment
+`run_demo.py` performs the application-side flow only:
+
+1. Checks local app health.
+2. Probes the Relivio API key.
+3. Registers a deployment through the `relivio` Python SDK.
+4. Emits the selected scenario through the local FastAPI app.
+5. Prints the `deployment_id` for external inspection.
+
+After the observation window closes, ask your MCP-enabled agent to inspect that deployment through Relivio. If you need a raw fallback:
 
 ```bash
-source .venv/bin/activate
-python scripts/register_deploy.py
-```
-
-Example output:
-
-```text
-deployment_id=0195f8d8-6f3c-7d4c-bd79-8a0ab2d2a911
-version=relivio-demo-20260310121500
-summary_note=In the hosted environment, the summary is usually ready after the observation window closes.
-```
-
-Current default marker shape:
-
-- `version`: `relivio-demo-<timestamp>`
-- deployment metadata:
-  - `source=relivio-demo-fastapi`
-  - `environment=demo`
-  - `demo_flow=true`
-- log `service`: `relivio-demo-fastapi`
-
-These markers make demo runs easier to identify and exclude later from tuning or governance exports.
-
-If you want to confirm what the target project has seen most recently from the agent side:
-
-```bash
-source .venv/bin/activate
-python scripts/list_recent_deployments.py
-```
-
-That uses the runtime read surface:
-
-- `relivio-mcp`
-- `list_recent_deployments`
-- project-scoped recent deployments only
-
-## 4. Trigger a scenario
-
-One request is enough for a wiring check.
-For a more convincing demo, inspect the scenario catalog first, then use one of the shaped scenarios below.
-
-List the available scenarios from the terminal:
-
-```bash
-source .venv/bin/activate
-python scripts/trigger_failure.py --list-scenarios
-```
-
-Or inspect them from the app:
-
-```bash
-curl http://127.0.0.1:8000/demo/scenarios
-```
-
-```bash
-curl http://127.0.0.1:8000/demo/profile/transient-warning
-```
-
-Or:
-
-```bash
-source .venv/bin/activate
-python scripts/trigger_failure.py --scenario watch-demo
-```
-
-Current scenario presets:
-
-- `stable-demo`
-  - one transient warning on `/api/profile/update`
-  - intended to feel like "keep observing"
-- `watch-demo`
-  - warnings and errors concentrated on `/api/orders/{order_id}/commit`
-  - intended to feel like "guard-ready, not rollback-grade"
-- `risk-demo`
-  - errors spread across checkout and payments routes
-  - intended to feel like broader rollback-grade risk
-
-Demo routes used under the hood:
-
-- `/demo/profile/transient-warning`
-- `/demo/orders/guard-warning`
-- `/demo/orders/guard-error`
-- `/demo/checkout/submit-error`
-- `/demo/checkout/status-error`
-- `/demo/payments/capture-error`
-
-Warnings are sent directly to Relivio with a production-like `api_path`.
-Unhandled errors still pass through one shared FastAPI middleware, which sends `POST /api/v1/ingest/log` to Relivio.
-
-Important details:
-
-- `api_path` is sent as a production-like route template such as `/api/orders/{order_id}/commit`.
-- the helper script sends a unique `x-request-id` per request
-- repeated demo failures are therefore not collapsed by the idempotency key
-- `GET /demo/scenarios/{scenario}` returns one scenario definition for quick inspection
-
-## 5. Read the verdict
-
-Agent-side read path through MCP:
-
-```bash
-source .venv/bin/activate
-python scripts/check_verdict_via_mcp.py --latest-deployment --wait
-```
-
-That flow resolves the newest deployment id through MCP, then keeps polling `get_verdict` until the observation window closes.
-
-If you want the lower-level runtime summary directly:
-
-```bash
-source .venv/bin/activate
 python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 ```
 
-If you do not want to copy the id manually on the direct runtime path:
+## Scenarios
 
 ```bash
-source .venv/bin/activate
-python scripts/check_summary.py --latest-deployment --wait
+python scripts/run_demo.py --list-scenarios
 ```
 
-In the hosted environment, `404 SUMMARY_NOT_READY` is normal until the observation window ends.
-Use `--wait` to poll automatically until the summary is ready.
+Available presets:
 
-What the summary script prints:
+- `single-demo`: one checkout error for the smallest wiring check.
+- `stable-demo`: one transient profile warning.
+- `watch-demo`: repeated order-route warnings/errors.
+- `risk-demo`: checkout and payment errors spread across multiple API paths.
 
-- `verdict`
-- `decision_tier`
-- `score`
-- `recommended_action`
-- `recommended_action_detail`
-- `affected_apis`
-- a short `content_preview`
-
-## One-shot demo
-
-If you want the full backend demo on the current public surfaces without copying `deployment_id` between commands:
+The app exposes a compact signal endpoint instead of many route-specific demo endpoints:
 
 ```bash
-source .venv/bin/activate
-python scripts/demo_agent_cycle.py --scenario risk-demo
+curl http://127.0.0.1:8000/demo/scenarios
+curl http://127.0.0.1:8000/demo/signals/checkout-submit-error
+curl http://127.0.0.1:8000/demo/signals/profile-warning
 ```
 
-What it does:
+Error signals intentionally return `500`. The demo script treats those responses as expected signal generation, not as script failure.
 
-1. checks local app health
-2. probes the SDK runtime path with your API key
-3. registers a deployment through the `relivio` Python SDK
-4. prints the selected scenario intent, then triggers the shaped stable/watch/risk sequence
-5. resolves the newest deployment through `relivio-mcp`
-6. waits for the verdict through `relivio-mcp`, then prints the verdict + decision tier
+## Integration Shape
 
-## What this repo demonstrates
+Start with these files:
 
-- the `relivio` Python SDK is used for deployment registration
-- the `relivio` Python SDK is used inside a user-written FastAPI middleware for ingest
-- `relivio-mcp` is used to list recent deployments and read deploy verdicts
-- `python scripts/demo_agent_cycle.py` stitches the full SDK + MCP path together for demo use
-- `python scripts/list_recent_deployments.py` reads the newest project-scoped deployment ids through MCP
-- `python scripts/check_verdict_via_mcp.py --latest-deployment --wait` reads the newest deployment verdict through MCP
-- `python scripts/check_summary.py --latest-deployment --wait` remains as a lower-level runtime summary inspection path
-
-This repo is not a production starter kit.
-It is a minimal, concrete backend example that still produces a real Relivio decision.
-
-Because this demo uses the real runtime path, each run persists deployment, ingest, and summary records in the target Relivio project. Use a dedicated demo project or API key, not a project you plan to treat as clean learning data later.
-
-This repo still treats deploy registration as a deploy-boundary action.
-It does not register deployments from app startup hooks.
-The server-side multi-worker dedup path is a safety net, not the preferred integration shape.
-
-## Start here
-
-If you only want the integration shape, start here:
-
+- [app/relivio_setup.py](./app/relivio_setup.py)
 - [app/main.py](./app/main.py)
-- [app/relivio.py](./app/relivio.py)
+- [app/routes.py](./app/routes.py)
 
-For a first rollout, those two files are enough to understand the integration shape.
+`app/relivio_setup.py` creates one SDK client:
 
-## Local routes
+```python
+relivio = Relivio(
+    api_key=os.environ["RELIVIO_PROJECT_API_KEY"],
+    base_url=os.environ["RELIVIO_API_BASE_URL"],
+    default_service=os.getenv("RELIVIO_SERVICE_NAME", "relivio-demo-fastapi"),
+    trace_id_provider=request_id_var.get,
+)
+```
 
-- `GET /`
-- `GET /health`
-- `GET /demo/scenarios`
-- `GET /demo/scenarios/{scenario}`
-- `GET /demo/ok`
-- `GET /demo/profile/transient-warning`
-- `GET /demo/orders/guard-warning`
-- `GET /demo/orders/guard-error`
-- `GET /demo/checkout/submit-error`
-- `GET /demo/checkout/status-error`
-- `GET /demo/payments/capture-error`
-- `GET /demo/fail`
-- `GET /demo/fail-timeout`
-- `GET /demo/fail-validation`
+`app/main.py` keeps exception capture at one ASGI boundary:
+
+```python
+try:
+    await self.app(scope, receive, send_wrapper)
+except Exception as exc:
+    await relivio.acapture_exception(exc, api_path=resolve_api_path(scope))
+    await JSONResponse(status_code=500, content={...})(scope, receive, send)
+```
+
+The ASGI middleware is used deliberately here because this demo intentionally raises `500` responses as signal data. The boundary captures the exception and returns a stable JSON response without letting the original exception leak back to the ASGI server.
+
+## Scripts
+
+- `scripts/doctor.py`: verifies local app and Relivio API readiness.
+- `scripts/run_demo.py`: registers one deployment and emits one scenario.
+- `scripts/check_summary.py`: raw HTTP fallback for summary/verdict inspection.
+- `scripts/demo_lib.py`: shared script helpers.
+
+## Notes
+
+- This repo is not a production starter kit.
+- Deploy registration is shown as a deploy-boundary action, not an app startup hook.
+- Runtime signals are not given idempotency keys; repeated demo failures should remain visible.
+- Use a dedicated demo project/API key. Demo runs persist deployment, ingest, and summary records in the target Relivio project.

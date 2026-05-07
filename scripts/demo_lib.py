@@ -1,22 +1,27 @@
 from __future__ import annotations
 
 import os
-import time
+import sys
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from pprint import pprint
 
 import httpx
 from dotenv import load_dotenv
 
-from demo_scenarios import (
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.demo_scenarios import (
     default_failure_count_for_scenario,
     describe_scenarios,
     get_scenario_definition,
-    planned_paths_for_scenario,
+    planned_signals_for_scenario,
     resolve_scenario_name,
+    scenario_choices,
 )
 
 
@@ -60,6 +65,7 @@ def load_demo_config() -> DemoConfig:
         or "relivio-demo-fastapi",
         app_base_url=(os.getenv("APP_BASE_URL") or "http://127.0.0.1:8000").strip().rstrip("/"),
     )
+
 
 def build_deploy_version(prefix: str = "relivio-demo") -> str:
     return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -118,22 +124,29 @@ def trigger_failures(
     *,
     scenario: str,
     count: int,
-    path: str = "/demo/fail",
 ) -> list[dict[str, object]]:
     resolved_scenario = resolve_scenario_name(scenario)
-    planned_paths = (path,) if resolved_scenario == "single-demo" else planned_paths_for_scenario(resolved_scenario)
+    planned_signals = planned_signals_for_scenario(resolved_scenario)
     results: list[dict[str, object]] = []
     with httpx.Client(timeout=3.0) as client:
         for index in range(count):
-            resolved_path = planned_paths[index % len(planned_paths)]
-            response = client.get(
-                f"{config.app_base_url}{resolved_path}",
-                headers={"x-request-id": f"demo-{index + 1}-{uuid.uuid4().hex[:12]}"},
-            )
+            signal_name = planned_signals[index % len(planned_signals)]
+            resolved_path = f"/demo/signals/{signal_name}"
+            try:
+                response = client.get(
+                    f"{config.app_base_url}{resolved_path}",
+                    headers={"x-request-id": f"demo-{index + 1}-{uuid.uuid4().hex[:12]}"},
+                )
+            except httpx.HTTPError as exc:
+                raise RuntimeError(
+                    "local demo app trigger request failed. "
+                    "If the app is running with --reload, restart it after code changes and rerun the demo."
+                ) from exc
             results.append(
                 {
                     "index": index + 1,
                     "path": resolved_path,
+                    "signal": signal_name,
                     "status_code": response.status_code,
                     "body": response.text,
                 }
@@ -164,7 +177,7 @@ def print_scenario_catalog() -> None:
         )
         print(f"  intended_outcome={item['intended_outcome']}")
         print(f"  default_count={item['default_count']}")
-        print(f"  manual_route={item['manual_route']}")
+        print(f"  manual_signal={item['manual_signal']}")
         print(f"  summary={item['summary']}")
 
 
@@ -246,32 +259,6 @@ def print_recent_deployments(items: list[dict[str, object]]) -> None:
         )
 
 
-def wait_for_summary(
-    config: DemoConfig,
-    *,
-    deployment_id: str | None,
-    interval_seconds: float,
-    timeout_seconds: float,
-    on_retry: Callable[[int, float], None] | None = None,
-) -> dict[str, object] | None:
-    deadline = time.monotonic() + max(timeout_seconds, 0.0)
-    attempt = 0
-
-    while True:
-        response = fetch_summary(config, deployment_id=deployment_id)
-        if response.status_code != 404:
-            response.raise_for_status()
-            return response.json()
-
-        if time.monotonic() >= deadline:
-            return None
-
-        attempt += 1
-        if on_retry is not None:
-            on_retry(attempt, interval_seconds)
-        time.sleep(max(interval_seconds, 0.5))
-
-
 def print_summary(payload: dict[str, object]) -> None:
     print(f"verdict={payload.get('verdict')}")
     print(f"decision_tier={payload.get('decision_tier')}")
@@ -279,6 +266,7 @@ def print_summary(payload: dict[str, object]) -> None:
     print(f"recommended_action={payload.get('recommended_action')}")
     print(f"recommended_action_detail={payload.get('recommended_action_detail')}")
     print(f"affected_apis={payload.get('affected_apis')}")
+    print_delivery_policy(payload)
     content = payload.get("content")
     if isinstance(content, str) and content.strip():
         first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
@@ -289,3 +277,10 @@ def print_summary(payload: dict[str, object]) -> None:
     if guidance:
         print("protection_guidance:")
         pprint(guidance)
+
+
+def print_delivery_policy(payload: dict[str, object]) -> None:
+    print(f"delivery_status={payload.get('delivery_status')}")
+    print(f"delivery_hold_reason={payload.get('delivery_hold_reason')}")
+    print(f"external_delivery_ready={payload.get('external_delivery_ready')}")
+    print(f"agent_ready={payload.get('agent_ready')}")

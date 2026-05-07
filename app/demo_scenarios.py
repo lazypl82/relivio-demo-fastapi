@@ -10,8 +10,8 @@ class DemoScenario:
     default_count: int
     intended_outcome: str
     summary: str
-    manual_route: str
-    route_sequence: tuple[str, ...]
+    manual_signal: str
+    signal_sequence: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -29,18 +29,18 @@ SCENARIOS: dict[str, DemoScenario] = {
         aliases=("single",),
         default_count=1,
         intended_outcome="minimal wiring check",
-        summary="Calls one path once so you can verify deploy -> ingest -> summary wiring with the smallest signal set.",
-        manual_route="/demo/fail",
-        route_sequence=("/demo/fail",),
+        summary="Emits one checkout error so you can verify deploy -> ingest wiring with the smallest signal set.",
+        manual_signal="checkout-submit-error",
+        signal_sequence=("checkout-submit-error",),
     ),
     "stable-demo": DemoScenario(
         name="stable-demo",
         aliases=("stable",),
         default_count=1,
         intended_outcome="light keep-observing signal",
-        summary="Sends one transient warning on a single route so the output stays small and easy to inspect.",
-        manual_route="/demo/profile/transient-warning",
-        route_sequence=("/demo/profile/transient-warning",),
+        summary="Emits one transient profile warning so the output stays small and easy to inspect.",
+        manual_signal="profile-warning",
+        signal_sequence=("profile-warning",),
     ),
     "watch-demo": DemoScenario(
         name="watch-demo",
@@ -48,12 +48,12 @@ SCENARIOS: dict[str, DemoScenario] = {
         default_count=4,
         intended_outcome="guard-ready concentration",
         summary="Concentrates warnings and errors on one orders route so the verdict can look like a contained WATCH-style pattern.",
-        manual_route="/demo/orders/guard-warning",
-        route_sequence=(
-            "/demo/orders/guard-warning",
-            "/demo/orders/guard-warning",
-            "/demo/orders/guard-error",
-            "/demo/orders/guard-error",
+        manual_signal="order-warning",
+        signal_sequence=(
+            "order-warning",
+            "order-warning",
+            "order-error",
+            "order-error",
         ),
     ),
     "risk-demo": DemoScenario(
@@ -62,16 +62,16 @@ SCENARIOS: dict[str, DemoScenario] = {
         default_count=8,
         intended_outcome="broader rollback-grade pressure",
         summary="Spreads repeated errors across checkout and payments routes so the signal looks broader than one noisy endpoint.",
-        manual_route="/demo/checkout/submit-error",
-        route_sequence=(
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
-            "/demo/checkout/status-error",
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
-            "/demo/checkout/status-error",
-            "/demo/checkout/submit-error",
-            "/demo/payments/capture-error",
+        manual_signal="checkout-submit-error",
+        signal_sequence=(
+            "checkout-submit-error",
+            "payment-capture-error",
+            "checkout-status-error",
+            "checkout-submit-error",
+            "payment-capture-error",
+            "checkout-status-error",
+            "checkout-submit-error",
+            "payment-capture-error",
         ),
     ),
 }
@@ -100,8 +100,8 @@ def get_scenario_definition(raw: str) -> DemoScenario:
     return SCENARIOS[resolve_scenario_name(raw)]
 
 
-def planned_paths_for_scenario(raw: str) -> tuple[str, ...]:
-    return get_scenario_definition(raw).route_sequence
+def planned_signals_for_scenario(raw: str) -> tuple[str, ...]:
+    return get_scenario_definition(raw).signal_sequence
 
 
 def describe_scenarios() -> list[dict[str, object]]:

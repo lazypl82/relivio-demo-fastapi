@@ -1,133 +1,69 @@
 from __future__ import annotations
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from typing import Any
+
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.relivio import emit_demo_signal, ingest_unhandled_error
-from scripts.demo_scenarios import describe_scenarios, get_scenario_definition
-
-load_dotenv()
+from app.relivio_setup import relivio, request_id_var
+from app.routes import router as demo_router
 
 app = FastAPI(title="Relivio FastAPI Example")
 
 
-@app.get("/")
-async def root() -> dict[str, object]:
-    return {
-        "service": "relivio-demo-fastapi",
-        "status": "ok",
-        "quickstart": [
-            "GET /health",
-            "GET /demo/scenarios",
-            "Run python scripts/demo_agent_cycle.py --scenario risk-demo",
-        ],
-    }
+def resolve_api_path(scope: Scope) -> str:
+    state = scope.get("state")
+    overridden = state.get("relivio_api_path_override") if isinstance(state, dict) else None
+    if isinstance(overridden, str) and overridden.strip():
+        return overridden.strip()
+    route = scope.get("route")
+    route_path = getattr(route, "path", None)
+    if route_path:
+        return route_path
+    path = scope.get("path")
+    return str(path or "")
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+class RelivioDemoMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-@app.get("/demo/scenarios")
-async def demo_scenarios() -> dict[str, object]:
-    return {
-        "count": len(describe_scenarios()),
-        "scenarios": describe_scenarios(),
-    }
+        headers = dict(scope.get("headers") or [])
+        request_id = headers.get(b"x-request-id")
+        token = request_id_var.set(request_id.decode("latin-1") if request_id else None)
+        response_started = False
 
+        async def send_wrapper(message: dict[str, Any]) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
 
-@app.get("/demo/scenarios/{scenario_name}")
-async def demo_scenario_detail(scenario_name: str) -> dict[str, object]:
-    scenario = get_scenario_definition(scenario_name)
-    return scenario.to_dict()
-
-
-@app.get("/demo/ok")
-async def demo_ok() -> dict[str, str]:
-    return {"status": "ok", "message": "No error raised."}
-
-
-@app.get("/demo/profile/transient-warning")
-async def demo_profile_transient_warning(request: Request) -> dict[str, str]:
-    await emit_demo_signal(
-        request,
-        level="WARN",
-        message="profile update latency spike recovered before escalation",
-        error_type="TransientWarning",
-        api_path="/api/profile/update",
-    )
-    return {"status": "accepted", "scenario": "stable-demo", "signal": "warn"}
-
-
-@app.get("/demo/orders/guard-warning")
-async def demo_orders_guard_warning(request: Request) -> dict[str, str]:
-    await emit_demo_signal(
-        request,
-        level="WARN",
-        message="order commit retries increased on one route",
-        error_type="RouteWarning",
-        api_path="/api/orders/{order_id}/commit",
-    )
-    return {"status": "accepted", "scenario": "watch-demo", "signal": "warn"}
-
-
-@app.get("/demo/orders/guard-error")
-async def demo_orders_guard_error(request: Request) -> dict[str, str]:
-    request.state.relivio_api_path_override = "/api/orders/{order_id}/commit"
-    raise RuntimeError("order commit failed after earlier route warnings")
-
-
-@app.get("/demo/checkout/submit-error")
-async def demo_checkout_submit_error(request: Request) -> dict[str, str]:
-    request.state.relivio_api_path_override = "/api/checkout/submit"
-    raise RuntimeError("checkout submit failed: payment replica unavailable")
-
-
-@app.get("/demo/checkout/status-error")
-async def demo_checkout_status_error(request: Request) -> dict[str, str]:
-    request.state.relivio_api_path_override = "/api/checkout/status"
-    raise TimeoutError("checkout status timed out while waiting for downstream inventory")
-
-
-@app.get("/demo/payments/capture-error")
-async def demo_payments_capture_error(request: Request) -> dict[str, str]:
-    request.state.relivio_api_path_override = "/api/payments/{payment_id}/capture"
-    raise ValueError("payment capture failed: downstream gateway rejected token")
-
-
-@app.get("/demo/fail")
-async def demo_fail(request: Request) -> dict[str, str]:
-    return await demo_checkout_submit_error(request)
-
-
-@app.get("/demo/fail-timeout")
-async def demo_fail_timeout(request: Request) -> dict[str, str]:
-    return await demo_checkout_status_error(request)
-
-
-@app.get("/demo/fail-validation")
-async def demo_fail_validation(request: Request) -> dict[str, str]:
-    return await demo_payments_capture_error(request)
-
-
-@app.middleware("http")
-async def relivio_error_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as exc:
         try:
-            await ingest_unhandled_error(request, exc)
-        except Exception:
-            # Keep the original error flow fail-open if Relivio is unavailable.
-            pass
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": {
-                    "type": exc.__class__.__name__,
-                    "message": str(exc),
-                }
-            },
-        )
+            await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            await relivio.acapture_exception(exc, api_path=resolve_api_path(scope))
+            if response_started:
+                raise
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "error": {
+                        "type": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                },
+            )
+            await response(scope, receive, send)
+        finally:
+            request_id_var.reset(token)
+
+
+app.add_middleware(RelivioDemoMiddleware)
+app.include_router(demo_router)

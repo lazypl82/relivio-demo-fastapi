@@ -1,5 +1,5 @@
 fastapi==0.116.1
 httpx==0.28.1
 python-dotenv==1.1.1
-relivio==0.1.0
+relivio==0.2.0
 uvicorn==0.35.0
