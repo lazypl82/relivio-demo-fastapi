@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--scenario",
         choices=scenario_choices(),
-        default="risk-demo",
+        default="watch-demo",
         help="Which signal pattern to trigger after deploy registration.",
     )
     parser.add_argument(

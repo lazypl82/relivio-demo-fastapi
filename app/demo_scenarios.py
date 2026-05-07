@@ -44,24 +44,10 @@ SCENARIOS: dict[str, DemoScenario] = {
     ),
     "watch-demo": DemoScenario(
         name="watch-demo",
-        aliases=("watch",),
-        default_count=4,
-        intended_outcome="guard-ready concentration",
-        summary="Concentrates warnings and errors on one orders route so the verdict can look like a contained WATCH-style pattern.",
-        manual_signal="order-warning",
-        signal_sequence=(
-            "order-warning",
-            "order-warning",
-            "order-error",
-            "order-error",
-        ),
-    ),
-    "risk-demo": DemoScenario(
-        name="risk-demo",
-        aliases=("risk",),
+        aliases=("watch", "risk-demo", "risk"),
         default_count=15,
-        intended_outcome="broader rollback-grade pressure",
-        summary="Sustains repeated checkout and payment errors across multiple routes so the signal leans toward rollback-grade pressure.",
+        intended_outcome="rollback-ready WATCH",
+        summary="Sustains repeated checkout and payment errors across multiple routes so the current model usually lands in WATCH / rollback-ready.",
         manual_signal="checkout-submit-error",
         signal_sequence=(
             "checkout-submit-error",
@@ -79,6 +65,20 @@ SCENARIOS: dict[str, DemoScenario] = {
             "checkout-submit-error",
             "payment-capture-error",
             "checkout-status-error",
+        ),
+    ),
+    "contained-demo": DemoScenario(
+        name="contained-demo",
+        aliases=("contained", "guard-demo", "guard"),
+        default_count=4,
+        intended_outcome="contained route pressure",
+        summary="Concentrates warnings and errors on one orders route so you can inspect a smaller guard-style signal.",
+        manual_signal="order-warning",
+        signal_sequence=(
+            "order-warning",
+            "order-warning",
+            "order-error",
+            "order-error",
         ),
     ),
 }

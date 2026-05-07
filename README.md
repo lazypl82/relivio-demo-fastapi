@@ -45,7 +45,7 @@ In another terminal:
 ```bash
 source .venv/bin/activate
 python scripts/doctor.py
-python scripts/run_demo.py --scenario risk-demo
+python scripts/run_demo.py --scenario watch-demo
 ```
 
 `run_demo.py` performs the application-side flow only:
@@ -72,8 +72,10 @@ Available presets:
 
 - `single-demo`: one checkout error for the smallest wiring check.
 - `stable-demo`: one transient profile warning.
-- `watch-demo`: repeated order-route warnings/errors.
-- `risk-demo`: sustained checkout and payment errors spread across multiple API paths.
+- `contained-demo`: repeated order-route warnings/errors for a smaller guard-style signal.
+- `watch-demo`: representative sustained checkout/payment signal that usually lands in WATCH / rollback-ready.
+
+`risk-demo` and `risk` remain accepted as compatibility aliases for `watch-demo`; the public demo intentionally represents WATCH instead of pretending every noisy deployment must become RISK.
 
 The app exposes a compact signal endpoint instead of many route-specific demo endpoints:
 
