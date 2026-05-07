@@ -13,7 +13,7 @@ It intentionally does not call MCP from inside the demo app. MCP is an agent/cli
 - A deploy-boundary `deployment.register` call.
 - A FastAPI exception boundary that uses `relivio.acapture_exception(...)`.
 - A `trace_id_provider` wired through `ContextVar`.
-- A few shaped local signals that can produce `STABLE`, `WATCH`, or `RISK` verdicts after the observation window.
+- A few shaped local signals that push the verdict toward `STABLE`, `WATCH`, or `RISK` after the observation window.
 - A raw HTTP fallback script for inspecting the summary if you are not using an MCP-enabled agent.
 
 ## Setup
@@ -73,7 +73,7 @@ Available presets:
 - `single-demo`: one checkout error for the smallest wiring check.
 - `stable-demo`: one transient profile warning.
 - `watch-demo`: repeated order-route warnings/errors.
-- `risk-demo`: checkout and payment errors spread across multiple API paths.
+- `risk-demo`: sustained checkout and payment errors spread across multiple API paths.
 
 The app exposes a compact signal endpoint instead of many route-specific demo endpoints:
 

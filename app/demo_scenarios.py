@@ -59,9 +59,9 @@ SCENARIOS: dict[str, DemoScenario] = {
     "risk-demo": DemoScenario(
         name="risk-demo",
         aliases=("risk",),
-        default_count=8,
+        default_count=15,
         intended_outcome="broader rollback-grade pressure",
-        summary="Spreads repeated errors across checkout and payments routes so the signal looks broader than one noisy endpoint.",
+        summary="Sustains repeated checkout and payment errors across multiple routes so the signal leans toward rollback-grade pressure.",
         manual_signal="checkout-submit-error",
         signal_sequence=(
             "checkout-submit-error",
@@ -72,6 +72,13 @@ SCENARIOS: dict[str, DemoScenario] = {
             "checkout-status-error",
             "checkout-submit-error",
             "payment-capture-error",
+            "checkout-status-error",
+            "checkout-submit-error",
+            "payment-capture-error",
+            "checkout-status-error",
+            "checkout-submit-error",
+            "payment-capture-error",
+            "checkout-status-error",
         ),
     ),
 }
