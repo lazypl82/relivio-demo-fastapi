@@ -265,7 +265,14 @@ def print_summary(payload: dict[str, object]) -> None:
     print(f"score={payload.get('score')}")
     print(f"recommended_action={payload.get('recommended_action')}")
     print(f"recommended_action_detail={payload.get('recommended_action_detail')}")
+    rationale_summary = payload.get("rationale_summary")
+    if rationale_summary:
+        print(f"rationale_summary={rationale_summary}")
     print(f"affected_apis={payload.get('affected_apis')}")
+    operator_steps = payload.get("operator_steps")
+    if operator_steps:
+        print("operator_steps:")
+        pprint(operator_steps)
     print_delivery_policy(payload)
     content = payload.get("content")
     if isinstance(content, str) and content.strip():
