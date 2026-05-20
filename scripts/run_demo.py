@@ -90,6 +90,8 @@ def main() -> None:
     print("Next:")
     print("- Wait for the observation window to close.")
     print("- Ask your MCP-enabled agent to inspect this deployment through Relivio.")
+    print("- Start with the first affected API from the verdict before broad debugging.")
+    print("- Leave feedback/correction if the verdict was wrong, useful, or led to rollback.")
     print(f"- deployment_id={deployment_id}")
     print("- If you need a raw HTTP fallback: python scripts/check_summary.py --deployment-id " f"{deployment_id} --wait")
 

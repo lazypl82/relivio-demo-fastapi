@@ -4,7 +4,7 @@ Minimal FastAPI service that emits real Relivio deployment and runtime signals t
 
 This repo demonstrates the client-service side of a Relivio integration:
 
-`register deployment with SDK -> emit post-deploy signals with SDK -> inspect verdict from an external agent or fallback summary read`
+`register deployment with SDK -> emit post-deploy signals with SDK -> wait for the observation window -> inspect the verdict from notification/MCP/fallback summary -> start with the affected API -> leave feedback when useful`
 
 It intentionally does not call MCP from inside the demo app. MCP is an agent/client consumption path, not an application runtime dependency.
 
@@ -61,6 +61,15 @@ After the observation window closes, ask your MCP-enabled agent to inspect that 
 ```bash
 python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 ```
+
+The first verdict path is intentionally the same as production:
+
+1. Register deployment at the deploy boundary.
+2. Emit runtime errors from the app boundary.
+3. Wait for the observation window to close.
+4. Read the verdict from notification, MCP, or the fallback summary script.
+5. Inspect the first affected API before broad debugging.
+6. Leave feedback/correction when the verdict was wrong, useful, or led to rollback.
 
 ## Scenarios
 
