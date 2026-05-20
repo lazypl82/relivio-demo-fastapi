@@ -116,7 +116,7 @@ def register_deployment(
             idempotency_key=f"deploy:{resolved_version}",
         )
     )
-    return response.id, resolved_version
+    return getattr(response, "deployment_id", response.id), resolved_version
 
 
 def trigger_failures(

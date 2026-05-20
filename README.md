@@ -54,7 +54,7 @@ python scripts/run_demo.py --scenario watch-demo
 2. Probes the Relivio API key.
 3. Registers a deployment through the `relivio` Python SDK.
 4. Emits the selected scenario through the local FastAPI app.
-5. Prints the `deployment_id` for external inspection.
+5. Prints the SDK response `deployment_id` for external inspection.
 
 After the observation window closes, ask your MCP-enabled agent to inspect that deployment through Relivio. If you need a raw fallback:
 
@@ -65,6 +65,7 @@ python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
 The first verdict path is intentionally the same as production:
 
 1. Register deployment at the deploy boundary.
+   - The register response returns `deployment_id`; keep it in CI/demo logs when available.
 2. Emit runtime errors from the app boundary.
 3. Wait for the observation window to close.
 4. Read the verdict from notification, MCP, or the fallback summary script.
