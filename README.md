@@ -1,12 +1,89 @@
 # relivio-demo-fastapi
 
-Minimal FastAPI service that emits real Relivio deployment and runtime signals through the public Python SDK.
+Minimal FastAPI service that shows how Relivio turns post-deploy runtime errors into a deployment verdict such as `STABLE`, `WATCH`, or `RISK`.
 
 This repo demonstrates the client-service side of a Relivio integration:
 
 `register deployment with SDK -> emit post-deploy signals with SDK -> wait for the observation window -> inspect the verdict from notification/MCP/fallback summary -> start with the affected API -> leave feedback when useful`
 
 It intentionally does not call MCP from inside the demo app. MCP is an agent/client consumption path, not an application runtime dependency.
+
+## Fast Path
+
+Use this when you want to see the full deploy-to-verdict loop quickly.
+
+```bash
+git clone https://github.com/lazypl82/relivio-demo-fastapi.git
+cd relivio-demo-fastapi
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Fill `.env` with a Relivio project runtime API key:
+
+```dotenv
+RELIVIO_API_BASE_URL=https://api.relivio.dev
+RELIVIO_PROJECT_API_KEY=<PROJECT_RUNTIME_API_KEY>
+RELIVIO_SERVICE_NAME=relivio-demo-fastapi
+APP_BASE_URL=http://127.0.0.1:8000
+```
+
+Run the local app:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+In another terminal, emit the representative demo scenario:
+
+```bash
+source .venv/bin/activate
+python scripts/doctor.py
+python scripts/run_demo.py --scenario watch-demo
+```
+
+Example run output:
+
+```text
+Relivio FastAPI SDK demo
+scenario: watch-demo | intended_outcome=rollback-ready WATCH | default_count=15
+1/4 app health: OK - local demo app responded to /health
+2/4 Relivio API probe: OK - Relivio runtime probe reached the project-scoped verdict surface
+3/4 deployment registered via SDK: deployment_id=dep_... version=relivio-demo-...
+4/4 scenario emitted through local FastAPI app: scenario=watch-demo count=15 signals=checkout-status-error, checkout-submit-error, payment-capture-error
+   trigger_statuses: 500x15
+
+Next:
+- Wait for the observation window to close.
+- Ask your MCP-enabled agent to inspect this deployment through Relivio.
+- Start with the first affected API from the verdict before broad debugging.
+- Leave feedback/correction if the verdict was wrong, useful, or led to rollback.
+- deployment_id=dep_...
+- If you need a raw HTTP fallback: python scripts/check_summary.py --deployment-id dep_... --wait
+```
+
+After the observation window closes, inspect the verdict:
+
+```bash
+python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
+```
+
+Example verdict output:
+
+```text
+verdict=WATCH
+decision_tier=rollback_ready
+score=49
+recommended_action=Inspect checkout now and keep rollback ready
+recommended_action_detail=Start with /api/checkout/submit. Prepare a narrow containment path if the same signal continues into the next observation window.
+affected_apis=['/api/checkout/submit', '/api/payments/{payment_id}/capture', '/api/checkout/status']
+delivery_status=ready
+agent_ready=True
+```
+
+The local FastAPI app has no login or paid dependency. The hosted Relivio API call requires a Relivio project runtime API key because the demo writes real deployment, ingest, and summary records.
 
 ## What This Shows
 
@@ -15,6 +92,7 @@ It intentionally does not call MCP from inside the demo app. MCP is an agent/cli
 - A `trace_id_provider` wired through `ContextVar`.
 - A few shaped local signals that push the verdict toward `STABLE`, `WATCH`, or `RISK` after the observation window.
 - A raw HTTP fallback script for inspecting the summary if you are not using an MCP-enabled agent.
+- The `deployment_id` returned by registration, which is the handle an operator or agent can use to inspect the same deploy later.
 
 ## Setup
 
