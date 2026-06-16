@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from app.demo_scenarios import (
     default_failure_count_for_scenario,
     describe_scenarios,
     get_scenario_definition,
+    planned_offsets_for_scenario,
     planned_signals_for_scenario,
     resolve_scenario_name,
     scenario_choices,
@@ -127,9 +129,21 @@ def trigger_failures(
 ) -> list[dict[str, object]]:
     resolved_scenario = resolve_scenario_name(scenario)
     planned_signals = planned_signals_for_scenario(resolved_scenario)
+    planned_offsets = planned_offsets_for_scenario(resolved_scenario)
+    schedule = build_signal_schedule(
+        count=count,
+        planned_offsets=planned_offsets,
+    )
     results: list[dict[str, object]] = []
+    previous_offset = 0.0
     with httpx.Client(timeout=3.0) as client:
         for index in range(count):
+            scheduled_offset = schedule[index]
+            wait_seconds = max(0.0, scheduled_offset - previous_offset)
+            if wait_seconds:
+                time.sleep(wait_seconds)
+            previous_offset = scheduled_offset
+
             signal_name = planned_signals[index % len(planned_signals)]
             resolved_path = f"/demo/signals/{signal_name}"
             try:
@@ -147,11 +161,37 @@ def trigger_failures(
                     "index": index + 1,
                     "path": resolved_path,
                     "signal": signal_name,
+                    "scheduled_offset_seconds": round(scheduled_offset, 3),
                     "status_code": response.status_code,
                     "body": response.text,
                 }
             )
     return results
+
+
+def build_signal_schedule(
+    *,
+    count: int,
+    planned_offsets: tuple[int, ...],
+) -> list[float]:
+    if count <= 0:
+        return []
+    if not planned_offsets:
+        return [0.0 for _ in range(count)]
+
+    offsets = [float(value) for value in planned_offsets[:count]]
+    if len(offsets) >= count:
+        return offsets
+
+    if len(planned_offsets) >= 2:
+        cadence = max(15.0, float(planned_offsets[-1] - planned_offsets[-2]))
+    else:
+        cadence = 30.0
+    next_offset = offsets[-1] if offsets else 0.0
+    while len(offsets) < count:
+        next_offset += cadence
+        offsets.append(next_offset)
+    return offsets
 
 
 def summarize_trigger_results(results: list[dict[str, object]]) -> dict[str, object]:
@@ -177,6 +217,7 @@ def print_scenario_catalog() -> None:
         )
         print(f"  intended_outcome={item['intended_outcome']}")
         print(f"  default_count={item['default_count']}")
+        print(f"  realistic_duration_seconds={item['estimated_realistic_duration_seconds']}")
         print(f"  manual_signal={item['manual_signal']}")
         print(f"  summary={item['summary']}")
 
@@ -196,6 +237,22 @@ def fetch_summary(
         params["deployment_id"] = deployment_id
     return httpx.get(
         f"{config.relivio_api_base_url}/api/v1/summaries/latest",
+        headers={"X-API-Key": config.relivio_project_api_key},
+        params=params,
+        timeout=5.0,
+    )
+
+
+def fetch_provisional_summary(
+    config: DemoConfig,
+    *,
+    deployment_id: str | None,
+) -> httpx.Response:
+    params: dict[str, str] = {}
+    if deployment_id:
+        params["deployment_id"] = deployment_id
+    return httpx.get(
+        f"{config.relivio_api_base_url}/api/v1/summaries/provisional",
         headers={"X-API-Key": config.relivio_project_api_key},
         params=params,
         timeout=5.0,
@@ -284,6 +341,32 @@ def print_summary(payload: dict[str, object]) -> None:
     if guidance:
         print("protection_guidance:")
         pprint(guidance)
+
+
+def print_provisional_summary(payload: dict[str, object]) -> None:
+    print(f"deployment_id={payload.get('deployment_id')}")
+    print(f"provisional={payload.get('provisional')}")
+    print(f"final={payload.get('final')}")
+    print(f"window_state={payload.get('window_state')}")
+    print(f"verdict={payload.get('verdict')}")
+    print(f"forecast_confidence={payload.get('forecast_confidence')}")
+    print(f"current_score={payload.get('current_score')}")
+    print(f"forecast_score={payload.get('forecast_score')}")
+    print(f"forecast_delta={payload.get('forecast_delta')}")
+    print(f"elapsed_minutes={payload.get('elapsed_minutes')}")
+    print(f"affected_apis={payload.get('affected_apis')}")
+    forecast_reasons = payload.get("forecast_reasons")
+    if forecast_reasons:
+        print("forecast_reasons:")
+        pprint(forecast_reasons)
+    top_signals = payload.get("top_signals")
+    if top_signals:
+        print("top_signals:")
+        pprint(top_signals)
+    window = payload.get("window")
+    if isinstance(window, dict):
+        print("window:")
+        pprint(window)
 
 
 def print_delivery_policy(payload: dict[str, object]) -> None:

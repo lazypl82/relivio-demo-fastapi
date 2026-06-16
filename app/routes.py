@@ -91,6 +91,7 @@ async def root() -> dict[str, object]:
         "quickstart": [
             "GET /health",
             "GET /demo/scenarios",
+            "Run python scripts/run_demo.py --doctor",
             "Run python scripts/run_demo.py --scenario watch-demo",
         ],
     }

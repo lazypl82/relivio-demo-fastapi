@@ -3,12 +3,24 @@ from __future__ import annotations
 import argparse
 import time
 
-from demo_lib import fetch_summary, load_demo_config, resolve_latest_deployment_id, print_summary
+from demo_lib import (
+    fetch_provisional_summary,
+    fetch_summary,
+    load_demo_config,
+    print_provisional_summary,
+    print_summary,
+    resolve_latest_deployment_id,
+)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read the latest Relivio summary.")
     parser.add_argument("--deployment-id", help="Deployment id to filter latest summary.")
+    parser.add_argument(
+        "--provisional",
+        action="store_true",
+        help="Read the active deploy-window provisional summary instead of the final summary.",
+    )
     parser.add_argument(
         "--latest-deployment",
         action="store_true",
@@ -49,11 +61,17 @@ def main() -> None:
     deadline = time.monotonic() + max(args.timeout_seconds, 0.0)
 
     while True:
-        response = fetch_summary(config, deployment_id=deployment_id)
+        if args.provisional:
+            response = fetch_provisional_summary(config, deployment_id=deployment_id)
+        else:
+            response = fetch_summary(config, deployment_id=deployment_id)
 
         if response.status_code != 404:
             response.raise_for_status()
-            print_summary(response.json())
+            if args.provisional:
+                print_provisional_summary(response.json())
+            else:
+                print_summary(response.json())
             return
 
         if not args.wait:
@@ -61,13 +79,13 @@ def main() -> None:
             return
 
         if time.monotonic() >= deadline:
-            print("Timed out waiting for the summary.")
+            label = "provisional summary" if args.provisional else "summary"
+            print(f"Timed out waiting for the {label}.")
             print(response.text)
             return
 
-        print(
-            f"Summary not ready yet. Waiting {args.interval_seconds:g}s before checking again..."
-        )
+        label = "Provisional summary" if args.provisional else "Summary"
+        print(f"{label} not ready yet. Waiting {args.interval_seconds:g}s before checking again...")
         time.sleep(max(args.interval_seconds, 0.5))
 
 

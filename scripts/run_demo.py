@@ -17,9 +17,35 @@ from demo_lib import (
 )
 
 
+def run_doctor() -> None:
+    config = load_demo_config()
+    print("Relivio demo doctor")
+    print(f"- app_base_url={config.app_base_url}")
+    print(f"- relivio_api_base_url={config.relivio_api_base_url}")
+    print(f"- service_name={config.relivio_service_name}")
+
+    app_ok, app_message = check_app_health(config)
+    print(f"- app_health={'OK' if app_ok else 'FAIL'}: {app_message}")
+
+    runtime_ok, runtime_message = probe_relivio_runtime(config)
+    print(f"- runtime_probe={'OK' if runtime_ok else 'FAIL'}: {runtime_message}")
+
+    if app_ok and runtime_ok:
+        print("doctor_status=ready")
+        return
+
+    print("doctor_status=not_ready")
+    raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Register one demo deployment and emit shaped FastAPI signals through the Relivio SDK."
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Check local app and Relivio API readiness without registering a deployment.",
     )
     parser.add_argument(
         "--scenario",
@@ -32,10 +58,13 @@ def main() -> None:
         action="store_true",
         help="Print the available demo scenarios and exit.",
     )
-    parser.add_argument("--count", type=int, help="Override how many local requests to trigger.")
     parser.add_argument("--version", help="Optional deployment version label.")
     parser.add_argument("--note", default="fastapi sdk demo flow", help="Optional deployment note.")
     args = parser.parse_args()
+
+    if args.doctor:
+        run_doctor()
+        return
 
     if args.list_scenarios:
         print_scenario_catalog()
@@ -43,7 +72,7 @@ def main() -> None:
 
     config = load_demo_config()
     scenario = resolve_scenario_name(args.scenario)
-    count = args.count if args.count is not None else default_failure_count_for_scenario(scenario)
+    count = default_failure_count_for_scenario(scenario)
     details = scenario_details(scenario)
 
     print("Relivio FastAPI SDK demo")
@@ -53,6 +82,10 @@ def main() -> None:
         f"default_count={details['default_count']}"
     )
     print(f"scenario_summary: {details['summary']}")
+    print(
+        "signal_schedule: "
+        f"realistic | duration_seconds={details['estimated_realistic_duration_seconds']}"
+    )
 
     app_ok, app_message = check_app_health(config)
     print(f"1/4 app health: {'OK' if app_ok else 'FAIL'} - {app_message}")
@@ -86,9 +119,14 @@ def main() -> None:
         f"scenario={scenario} count={len(results)} signals={', '.join(distinct_signals)}"
     )
     print(f"   trigger_statuses: {status_summary}")
+    if results:
+        last_offset = results[-1].get("scheduled_offset_seconds")
+        print(f"   last_scheduled_signal_at_seconds={last_offset}")
     print()
     print("Next:")
-    print("- Wait for the observation window to close.")
+    print("- Check the active-window provisional read before the final window closes:")
+    print("  python scripts/check_summary.py --provisional --deployment-id " f"{deployment_id} --wait")
+    print("- Wait for the observation window to close for the final verdict.")
     print("- Ask your MCP-enabled agent to inspect this deployment through Relivio.")
     print("- Start with the first affected API from the verdict before broad debugging.")
     print("- Leave feedback/correction if the verdict was wrong, useful, or led to rollback.")

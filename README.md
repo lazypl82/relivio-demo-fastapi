@@ -10,7 +10,7 @@ It intentionally does not call MCP from inside the demo app. MCP is an agent/cli
 
 ## Fast Path
 
-Use this when you want to see the full deploy-to-verdict loop quickly.
+Use this when you want to see the full deploy-to-verdict loop with realistic signal pacing.
 
 ```bash
 git clone https://github.com/lazypl82/relivio-demo-fastapi.git
@@ -40,23 +40,29 @@ In another terminal, emit the representative demo scenario:
 
 ```bash
 source .venv/bin/activate
-python scripts/doctor.py
+python scripts/run_demo.py --doctor
 python scripts/run_demo.py --scenario watch-demo
 ```
+
+`run_demo.py` emits each scenario with its representative schedule. Signals are spread across the active deploy window because the demo is meant to show the verdict flow as an operator would experience it.
 
 Example run output:
 
 ```text
 Relivio FastAPI SDK demo
 scenario: watch-demo | intended_outcome=rollback-ready WATCH | default_count=15
+signal_schedule: realistic | duration_seconds=780
 1/4 app health: OK - local demo app responded to /health
 2/4 Relivio API probe: OK - Relivio runtime probe reached the project-scoped verdict surface
 3/4 deployment registered via SDK: deployment_id=dep_... version=relivio-demo-...
 4/4 scenario emitted through local FastAPI app: scenario=watch-demo count=15 signals=checkout-status-error, checkout-submit-error, payment-capture-error
    trigger_statuses: 500x15
+   last_scheduled_signal_at_seconds=780.0
 
 Next:
-- Wait for the observation window to close.
+- Check the active-window provisional read before the final window closes:
+  python scripts/check_summary.py --provisional --deployment-id dep_... --wait
+- Wait for the observation window to close for the final verdict.
 - Ask your MCP-enabled agent to inspect this deployment through Relivio.
 - Start with the first affected API from the verdict before broad debugging.
 - Leave feedback/correction if the verdict was wrong, useful, or led to rollback.
@@ -64,7 +70,29 @@ Next:
 - If you need a raw HTTP fallback: python scripts/check_summary.py --deployment-id dep_... --wait
 ```
 
-After the observation window closes, inspect the verdict:
+While the observation window is still open, inspect the provisional read:
+
+```bash
+python scripts/check_summary.py --provisional --deployment-id <DEPLOYMENT_ID> --wait
+```
+
+Example provisional output:
+
+```text
+deployment_id=dep_...
+provisional=True
+final=False
+window_state=watch_forming
+verdict=WATCH
+forecast_confidence=MEDIUM
+current_score=37
+forecast_score=49
+forecast_delta=12
+elapsed_minutes=5
+affected_apis=['/api/checkout/submit', '/api/payments/{payment_id}/capture']
+```
+
+After the observation window closes, inspect the final verdict:
 
 ```bash
 python scripts/check_summary.py --deployment-id <DEPLOYMENT_ID> --wait
@@ -91,6 +119,7 @@ The local FastAPI app has no login or paid dependency. The hosted Relivio API ca
 - A FastAPI exception boundary that uses `relivio.acapture_exception(...)`.
 - A `trace_id_provider` wired through `ContextVar`.
 - A few shaped local signals that push the verdict toward `STABLE`, `WATCH`, or `RISK` after the observation window.
+- A provisional summary check that shows the active deploy-window read before final verdict closes.
 - A raw HTTP fallback script for inspecting the summary if you are not using an MCP-enabled agent.
 - The `deployment_id` returned by registration, which is the handle an operator or agent can use to inspect the same deploy later.
 
@@ -122,17 +151,25 @@ In another terminal:
 
 ```bash
 source .venv/bin/activate
-python scripts/doctor.py
+python scripts/run_demo.py --doctor
 python scripts/run_demo.py --scenario watch-demo
 ```
+
+`run_demo.py --doctor` verifies local app and Relivio API readiness without registering a deployment.
 
 `run_demo.py` performs the application-side flow only:
 
 1. Checks local app health.
 2. Probes the Relivio API key.
 3. Registers a deployment through the `relivio` Python SDK.
-4. Emits the selected scenario through the local FastAPI app.
-5. Prints the SDK response `deployment_id` for external inspection.
+4. Emits the selected scenario through the local FastAPI app using its representative schedule.
+5. Prints the SDK response `deployment_id` for provisional/final inspection.
+
+While the observation window is open, inspect the active provisional read:
+
+```bash
+python scripts/check_summary.py --provisional --deployment-id <DEPLOYMENT_ID> --wait
+```
 
 After the observation window closes, ask your MCP-enabled agent to inspect that deployment through Relivio. If you need a raw fallback:
 
@@ -162,8 +199,14 @@ Available presets:
 - `stable-demo`: one transient profile warning.
 - `contained-demo`: repeated order-route warnings/errors for a smaller guard-style signal.
 - `watch-demo`: representative sustained checkout/payment signal that usually lands in WATCH / rollback-ready.
+- `risk-demo`: payment-capture-dominant repeated failures intended to exercise rollback-grade RISK.
 
-`risk-demo` and `risk` remain accepted as compatibility aliases for `watch-demo`; the public demo intentionally represents WATCH instead of pretending every noisy deployment must become RISK.
+Each scenario owns one representative signal schedule:
+
+- `stable-demo`: one late transient warning.
+- `contained-demo`: a narrow route warning that turns into errors over several minutes.
+- `watch-demo`: checkout/payment failures spread across the active deploy window.
+- `risk-demo`: repeated payment-capture pressure that ramps and remains route-dominant.
 
 The app exposes a compact signal endpoint instead of many route-specific demo endpoints:
 
@@ -208,9 +251,8 @@ The ASGI middleware is used deliberately here because this demo intentionally ra
 
 ## Scripts
 
-- `scripts/doctor.py`: verifies local app and Relivio API readiness.
-- `scripts/run_demo.py`: registers one deployment and emits one scenario.
-- `scripts/check_summary.py`: raw HTTP fallback for summary/verdict inspection.
+- `scripts/run_demo.py`: verifies readiness with `--doctor`, registers one deployment, and emits one scenario.
+- `scripts/check_summary.py`: raw HTTP fallback for active-window provisional and final verdict inspection.
 - `scripts/demo_lib.py`: shared script helpers.
 
 ## Notes
